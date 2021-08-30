@@ -6,8 +6,8 @@
 
 #define FIELD_PULL 0.01f																											// The strength with which points on the field are forced to return to their origin.
 
-#define WINDOW_STARTING_WIDTH 300
-#define WINDOW_STARTING_HEIGHT 300
+#define WINDOW_STARTING_WIDTH 1000
+#define WINDOW_STARTING_HEIGHT 1000
 
 int windowWidth = WINDOW_STARTING_WIDTH;
 int windowHeight = WINDOW_STARTING_HEIGHT;
@@ -70,96 +70,86 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 }
 
 
+// TODO:
+// This is what I think might be the solution. The wave looks strange when you put the STRENGTH define higher, maybe that is because the forces are stronger so they poke through the noise better and you can see the diamond shape, whereas with littler numbers you're almost fooled into thinking
+// that it's circle. I think that maybe in nature, every node influences every other node, not just the neighboring nodes, but it does so with a dropoff in influence so that the whole thing is gradual. That might resolve your weird shapes and give you perfect circles.
+// Start by trying with the surrounding 9 nodes, you don't have much processing power for more than that until you parallelize all of this for a gigantic speed boost. I assume the dropoff is caused by the hypotonus force vector getting more and more horizontal, which makes it harder
+// for two nodes to adjust with eachother. That might be one way of thinking about it and simulating it, maybe it is different though, give it a think.
+
 void calculate(float currentValue, float currentVel, float* nextCurrentValue, float* nextCurrentVel, float topValue, float leftValue, float bottomValue, float rightValue, float* top, float* left, float* bottom, float* right) {			// Calculates the actual wave propagation.
 
 	if (currentValue == 0) {
-		*nextCurrentVel = currentVel;
+		//*nextCurrentVel = currentVel;
 	}
 	else if (currentValue > 0) {
-		*nextCurrentVel = currentVel - FIELD_PULL;
+		//*nextCurrentVel = currentVel - FIELD_PULL;
+		*nextCurrentVel -= FIELD_PULL;
 	}
 	else if (currentValue < 0) {
-		*nextCurrentVel = currentVel + FIELD_PULL;
+		//*nextCurrentVel = currentVel + FIELD_PULL;
+		*nextCurrentVel += FIELD_PULL;
 	}
 	*nextCurrentValue = currentValue;
 
+#define STRENGTH 0.1f
+
 	if (top) {
 			float dist = abs(currentValue - topValue);
-	float thing = dist * 1;
+	float thing = dist * STRENGTH;
 
 	if (currentValue > topValue) {
 		*nextCurrentVel -= thing;
-		*top += thing;
+		//*top += thing;										// TODO: Instead of doing this to fix it, you can go through the whole list and only calculate the right and left neighbor interactions, but do those fully and doubly. That way is better I think for multiple reasons.
 	}
 	else {
 		*nextCurrentVel += thing;
-		*top -= thing;
+	//	*top -= thing;
 	}
 	}
 
 	if (left) {
 		float dist = abs(currentValue - leftValue);
-	float thing = dist * 1;
+	float thing = dist * STRENGTH;
 
 	if (currentValue > leftValue) {
 		*nextCurrentVel -= thing;
-		*left += thing;
+	//	*left += thing;
 	}
 	else {
 		*nextCurrentVel += thing;
-		*left -= thing;
+	//	*left -= thing;
 	}
 	}
 
 	if (bottom) {
 		float dist = abs(currentValue - bottomValue);
-	float thing = dist * 1;
+	float thing = dist * STRENGTH;
 
 	if (currentValue > bottomValue) {
 		*nextCurrentVel -= thing;
-		*bottom += thing;
+	//	*bottom += thing;
 	}
 	else {
 		*nextCurrentVel += thing;
-		*bottom -= thing;
+	//	*bottom -= thing;
 	}
 	}
 
 	if (right) {
 		float dist = abs(currentValue - rightValue);
-	float thing = dist * 1;
+	float thing = dist * STRENGTH;
 
 	if (currentValue > rightValue) {
 		*nextCurrentVel -= thing;
-		*right += thing;
+	//	*right += thing;
 	}
 	else {
 		*nextCurrentVel += thing;
-		*right -= thing;
+		//*right -= thing;
 	}
 	}
 
-	/*if (up == 0) {
-
-		if (velUp == 0) {
-			if (velDown == 0) {
-				if (down == 0) { return; }
-				if (FIELD_PULL > down) {
-					*current = FIELD_PULL - down;
-					*(current + 1) = 0;
-					*(current + 2) = FIELD_PULL - *current;
-				}
-			}
-		}
-
-
-		if (FIELD_PULL > *currentUnderValue) {
-			*current = FIELD_PULL - *currentUnderValue;
-			*(current + 1) = 0;
-		}
-		*current = *currentUnderValue - FIELD_PULL;
-		*(current + 2) =
-	}*/
+	*nextCurrentValue += *nextCurrentVel;
 }
 
 float clamp(float x, float upperBound) {
@@ -176,17 +166,21 @@ void graphicsLoop(HWND hWnd) {
 #define FIELD_SIZE (WINDOW_STARTING_WIDTH * WINDOW_STARTING_HEIGHT)
 	float* field = new float[FIELD_SIZE];
 	float* fieldVels = new float[FIELD_SIZE];
+	ZeroMemory(field, FIELD_SIZE * sizeof(float));
+	ZeroMemory(fieldVels, FIELD_SIZE * sizeof(float));
 
 	float* lastField = new float[FIELD_SIZE];
 	float* lastFieldVels = new float[FIELD_SIZE];
 	ZeroMemory(lastField, FIELD_SIZE * sizeof(float));
 	ZeroMemory(lastFieldVels, FIELD_SIZE * sizeof(float));
 
-	for (int i = 0; i < 300; i++) {
+	/*for (int i = 0; i < 900; i++) {
 		lastField[i] = 100;
-	}
+	}*/
 
-#define FRAME_SIZE (FIELD_SIZE * 4)
+	lastField[windowWidth * 150 + 150] = 10000;
+
+#define FRAME_SIZE (FIELD_SIZE * 4)																								// Do the allocation and setup for the frame data buffer, which we copy into the bitmap after every frame.
 	char* frame = new char[FRAME_SIZE];
 	for (int i = 0; i < FRAME_SIZE; i += 4) {
 		frame[i] =  0;
@@ -198,30 +192,47 @@ void graphicsLoop(HWND hWnd) {
 
 		for (int i = 0; i < FIELD_SIZE; i++) {
 
-			int left = -1;
-			if (i % 300 > 0) { left = i - 1; }
-			int top = -1;
-			if (i > 300) { top = i - 300; }
-			int right = -1;
-			if (i % 300 < 299) { right = i + 1; }
-			int bottom = -1;
-			if (i < FIELD_SIZE - 300) { bottom = i + 300; }
+			float topValue;																										// Check if a pixel above us exists.
+			float* topVel;
+			if (i >= windowWidth) {
+				int top = i - windowWidth;
+				topValue = lastField[top];
+				topVel = fieldVels + top;
+			}
+			else { topVel = nullptr; }
 
-			float leftValue = lastField[left];
-			float topValue = lastField[top];
-			float rightValue = lastField[right];
-			float bottomValue = lastField[bottom];
+			int x = i % windowWidth;
 
-			float* leftVel = fieldVels + left;
-			if (left == -1) { leftVel = nullptr; }
-			float* topVel = fieldVels + top;
-			if (top == -1) { topVel = nullptr; }
-			float* rightVel = fieldVels + right;
-			if (right == -1) { rightVel = nullptr; }
-			float* bottomVel = fieldVels + bottom;
-			if (bottom == -1) { bottomVel = nullptr; }
+			float leftValue;																									// Check if a pixel to the left of us exists.
+			float* leftVel;
+			if (x > 0) {
+				int left = i - 1;
+				leftValue = lastField[left];
+				leftVel = fieldVels + left;
+			}
+			else { leftVel = nullptr; }
 
-			calculate(lastField[i], lastFieldVels[i], field + i, fieldVels + i, topValue, leftValue, bottomValue, rightValue, topVel, leftVel, bottomVel, rightVel);
+			float bottomValue;																									// Check if a pixel below us exists.
+			float* bottomVel;
+			if (i < FIELD_SIZE - windowWidth) {																					// TODO: FIELD_SIZE needs to be replaced for the modular size to work properly.
+				int bottom = i + windowWidth;
+				bottomValue = lastField[bottom];
+				bottomVel = fieldVels + bottom;
+			}
+			else { bottomVel = nullptr; }
+
+			float rightValue;																									// Check if a pixel to the right of us exists.
+			float* rightVel;
+			if (x < windowWidth - 1) {
+				int right = i + 1;
+				rightValue = lastField[right];
+				rightVel = fieldVels + right;
+			}
+			else { rightVel = nullptr; }
+
+			calculate(lastField[i], lastFieldVels[i], field + i, fieldVels + i, topValue, leftValue, bottomValue, rightValue, topVel, leftVel, bottomVel, rightVel);					// Send all the data off to calculation function.
+			
+			//calculate(lastField[i], lastFieldVels[i], field + i, fieldVels + i, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr);
 		}
 
 
