@@ -6,8 +6,8 @@
 
 #define FIELD_PULL 0.01f																											// The strength with which points on the field are forced to return to their origin.
 
-#define WINDOW_STARTING_WIDTH 1000
-#define WINDOW_STARTING_HEIGHT 1000
+#define WINDOW_STARTING_WIDTH 300
+#define WINDOW_STARTING_HEIGHT 300
 
 int windowWidth = WINDOW_STARTING_WIDTH;
 int windowHeight = WINDOW_STARTING_HEIGHT;
@@ -69,87 +69,46 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	graphicsThread.join();
 }
 
+float* lastFieldVels;
+float* fieldVels;
+float* fieldValues;
 
-// TODO:
-// This is what I think might be the solution. The wave looks strange when you put the STRENGTH define higher, maybe that is because the forces are stronger so they poke through the noise better and you can see the diamond shape, whereas with littler numbers you're almost fooled into thinking
-// that it's circle. I think that maybe in nature, every node influences every other node, not just the neighboring nodes, but it does so with a dropoff in influence so that the whole thing is gradual. That might resolve your weird shapes and give you perfect circles.
-// Start by trying with the surrounding 9 nodes, you don't have much processing power for more than that until you parallelize all of this for a gigantic speed boost. I assume the dropoff is caused by the hypotonus force vector getting more and more horizontal, which makes it harder
-// for two nodes to adjust with eachother. That might be one way of thinking about it and simulating it, maybe it is different though, give it a think.
+#define TO_FIELD_INDEX(x, y) (y * windowWidth + x)				// TODO: Instead of relying on this, use 2D arrays, they do exactly this but behind the scenes so that your code looks nicer. Of course, maybe don't if you think you can be more efficient with the multiplying using this way.
+#define NODE_EQUALIZATION_STRENGTH 0.1f
 
-void calculate(float currentValue, float currentVel, float* nextCurrentValue, float* nextCurrentVel, float topValue, float leftValue, float bottomValue, float rightValue, float* top, float* left, float* bottom, float* right) {			// Calculates the actual wave propagation.
+int srcX;
+int srcY;
+float* srcVel;
+float srcValue;
+void equalize(int offsetX, int offsetY) {
+	int absoluteX = srcX + offsetX;
+	int absoluteY = srcY + offsetY;
+	if (absoluteX < 0 || absoluteX >= windowWidth || absoluteY < 0 || absoluteY >= windowHeight) { return; }
+	float dist = sqrt(offsetX * offsetX + offsetY * offsetY);															// TODO: Make sure the compiler optimizes this out and puts it into the accel calculations.
+	float accel = (srcValue - fieldValues[TO_FIELD_INDEX(absoluteX, absoluteY)]) * NODE_EQUALIZATION_STRENGTH / dist;
+	*srcVel -= accel;
+}
 
-	if (currentValue == 0) {
-		//*nextCurrentVel = currentVel;
-	}
-	else if (currentValue > 0) {
-		//*nextCurrentVel = currentVel - FIELD_PULL;
-		*nextCurrentVel -= FIELD_PULL;
-	}
-	else if (currentValue < 0) {
-		//*nextCurrentVel = currentVel + FIELD_PULL;
-		*nextCurrentVel += FIELD_PULL;
-	}
-	*nextCurrentValue = currentValue;
+const int kernelX[] { 1,  -1,  0,  0,  1, -1,  1, -1,  0, -2,  2,  0 };
+const int kernelY[] { 0,   0, -1,  1, -1, -1,  1,  1, -2,  0,  0,  2 };
+#define KERNEL_LENGTH (sizeof(kernelX) / sizeof(int))
 
-#define STRENGTH 0.1f
+void calculate(int x, int y) {
+	srcX = x;
+	srcY = y;
+	int index = TO_FIELD_INDEX(x, y);
+	float* value = fieldValues + index;
+	srcValue = *value;
 
-	if (top) {
-			float dist = abs(currentValue - topValue);
-	float thing = dist * STRENGTH;
+	srcVel = fieldVels + index;
+	if (srcValue > 0) { *srcVel = lastFieldVels[index] - FIELD_PULL; }
+	else if (srcValue < 0) { *srcVel = lastFieldVels[index] + FIELD_PULL; }
+	else { *srcVel = lastFieldVels[index]; }				// TODO: Having to do this is stupid, we just need to initialize the memory from the get-go.
+	for (int i = 0; i < KERNEL_LENGTH; i++) { equalize(kernelX[i], kernelY[i]); }
 
-	if (currentValue > topValue) {
-		*nextCurrentVel -= thing;
-		//*top += thing;										// TODO: Instead of doing this to fix it, you can go through the whole list and only calculate the right and left neighbor interactions, but do those fully and doubly. That way is better I think for multiple reasons.
-	}
-	else {
-		*nextCurrentVel += thing;
-	//	*top -= thing;
-	}
-	}
+	
 
-	if (left) {
-		float dist = abs(currentValue - leftValue);
-	float thing = dist * STRENGTH;
-
-	if (currentValue > leftValue) {
-		*nextCurrentVel -= thing;
-	//	*left += thing;
-	}
-	else {
-		*nextCurrentVel += thing;
-	//	*left -= thing;
-	}
-	}
-
-	if (bottom) {
-		float dist = abs(currentValue - bottomValue);
-	float thing = dist * STRENGTH;
-
-	if (currentValue > bottomValue) {
-		*nextCurrentVel -= thing;
-	//	*bottom += thing;
-	}
-	else {
-		*nextCurrentVel += thing;
-	//	*bottom -= thing;
-	}
-	}
-
-	if (right) {
-		float dist = abs(currentValue - rightValue);
-	float thing = dist * STRENGTH;
-
-	if (currentValue > rightValue) {
-		*nextCurrentVel -= thing;
-	//	*right += thing;
-	}
-	else {
-		*nextCurrentVel += thing;
-		//*right -= thing;
-	}
-	}
-
-	*nextCurrentValue += *nextCurrentVel;
+	//*value += *srcVel;
 }
 
 float clamp(float x, float upperBound) {
@@ -164,21 +123,18 @@ void graphicsLoop(HWND hWnd) {
 	SelectObject(g, bmp);
 
 #define FIELD_SIZE (WINDOW_STARTING_WIDTH * WINDOW_STARTING_HEIGHT)
-	float* field = new float[FIELD_SIZE];
-	float* fieldVels = new float[FIELD_SIZE];
-	ZeroMemory(field, FIELD_SIZE * sizeof(float));
-	ZeroMemory(fieldVels, FIELD_SIZE * sizeof(float));
+	fieldValues = new float[FIELD_SIZE];
+	ZeroMemory(fieldValues, FIELD_SIZE * sizeof(float));
+	fieldVels = new float[FIELD_SIZE];
 
-	float* lastField = new float[FIELD_SIZE];
-	float* lastFieldVels = new float[FIELD_SIZE];
-	ZeroMemory(lastField, FIELD_SIZE * sizeof(float));
+	lastFieldVels = new float[FIELD_SIZE];
 	ZeroMemory(lastFieldVels, FIELD_SIZE * sizeof(float));
 
 	/*for (int i = 0; i < 900; i++) {
 		lastField[i] = 100;
 	}*/
 
-	lastField[windowWidth * 150 + 150] = 10000;
+	fieldValues[windowWidth * 150 + 150] = 10000;
 
 #define FRAME_SIZE (FIELD_SIZE * 4)																								// Do the allocation and setup for the frame data buffer, which we copy into the bitmap after every frame.
 	char* frame = new char[FRAME_SIZE];
@@ -191,67 +147,29 @@ void graphicsLoop(HWND hWnd) {
 
 
 		for (int i = 0; i < FIELD_SIZE; i++) {
+			calculate(i % windowWidth, i / windowWidth);
+		}
 
-			float topValue;																										// Check if a pixel above us exists.
-			float* topVel;
-			if (i >= windowWidth) {
-				int top = i - windowWidth;
-				topValue = lastField[top];
-				topVel = fieldVels + top;
-			}
-			else { topVel = nullptr; }
-
-			int x = i % windowWidth;
-
-			float leftValue;																									// Check if a pixel to the left of us exists.
-			float* leftVel;
-			if (x > 0) {
-				int left = i - 1;
-				leftValue = lastField[left];
-				leftVel = fieldVels + left;
-			}
-			else { leftVel = nullptr; }
-
-			float bottomValue;																									// Check if a pixel below us exists.
-			float* bottomVel;
-			if (i < FIELD_SIZE - windowWidth) {																					// TODO: FIELD_SIZE needs to be replaced for the modular size to work properly.
-				int bottom = i + windowWidth;
-				bottomValue = lastField[bottom];
-				bottomVel = fieldVels + bottom;
-			}
-			else { bottomVel = nullptr; }
-
-			float rightValue;																									// Check if a pixel to the right of us exists.
-			float* rightVel;
-			if (x < windowWidth - 1) {
-				int right = i + 1;
-				rightValue = lastField[right];
-				rightVel = fieldVels + right;
-			}
-			else { rightVel = nullptr; }
-
-			calculate(lastField[i], lastFieldVels[i], field + i, fieldVels + i, topValue, leftValue, bottomValue, rightValue, topVel, leftVel, bottomVel, rightVel);					// Send all the data off to calculation function.
-			
-			//calculate(lastField[i], lastFieldVels[i], field + i, fieldVels + i, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr);
+		for (int i = 0; i < FIELD_SIZE; i++) {
+			fieldValues[i] += fieldVels[i];
 		}
 
 
-		memcpy(lastField, field, FIELD_SIZE * sizeof(float));																			// Copy the current frame data into the slot for the last frame.
 		memcpy(lastFieldVels, fieldVels, FIELD_SIZE * sizeof(float));
 
 		for (int i = 0; i < FIELD_SIZE; i++) {
 			int frameIndex = i * 4;
-			if (field[i] > 0) {
-				frame[frameIndex + 1] = clamp(field[i], 100) / 100 * 255;
+			if (fieldValues[i] > 0) {
+				frame[frameIndex + 1] = clamp(fieldValues[i], 100) / 100 * 255;
 				frame[frameIndex + 2] = 0;
 			}
-			else if (field[i] == 0) {
+			else if (fieldValues[i] == 0) {
 				frame[frameIndex + 1] = 0;
 				frame[frameIndex + 2] = 0;
 			}
 			else {
 				frame[frameIndex + 1] = 0;
-				frame[frameIndex + 2] = clamp((-field[i]), 100) / 100 * 255;
+				frame[frameIndex + 2] = clamp((-fieldValues[i]), 100) / 100 * 255;
 			}
 		}
 
