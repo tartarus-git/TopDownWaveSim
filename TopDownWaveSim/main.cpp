@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <windowsx.h>
 
 #include <iostream>
 #include <thread>
@@ -15,8 +16,15 @@ int windowHeight = WINDOW_STARTING_HEIGHT;
 void graphicsLoop(HWND hWnd);
 bool isAlive = true;
 
+int mouseX = -1;
+int mouseY = -1;
+
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	switch (uMsg) {
+	case WM_LBUTTONDOWN:
+		mouseX = GET_X_LPARAM(lParam);
+		mouseY = GET_Y_LPARAM(lParam);
+		return 0;
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;
@@ -131,10 +139,16 @@ void graphicsLoop(HWND hWnd) {
 	ZeroMemory(lastFieldVels, FIELD_SIZE * sizeof(float));
 
 	/*for (int i = 0; i < 900; i++) {
-		lastField[i] = 100;
+		fieldValues[i] = 100;
+	}
+
+	for (int i = FIELD_SIZE - 1; i >= FIELD_SIZE - 900; i--) {
+		fieldValues[i] = 100;
 	}*/
 
-	fieldValues[windowWidth * 150 + 150] = 10000;
+	fieldValues[windowWidth * 150 + 150 + 10] = 10000;
+	fieldValues[windowWidth * 150 + 150 - 10] = 10000;
+
 
 #define FRAME_SIZE (FIELD_SIZE * 4)																								// Do the allocation and setup for the frame data buffer, which we copy into the bitmap after every frame.
 	char* frame = new char[FRAME_SIZE];
@@ -145,6 +159,10 @@ void graphicsLoop(HWND hWnd) {
 
 	while (isAlive) {																											// Start the actual graphics loop.
 
+		if (mouseX != -1) {
+			fieldValues[mouseX + mouseY * windowWidth] = 10000;
+			mouseX = -1;
+		}
 
 		for (int i = 0; i < FIELD_SIZE; i++) {
 			calculate(i % windowWidth, i / windowWidth);
@@ -152,6 +170,16 @@ void graphicsLoop(HWND hWnd) {
 
 		for (int i = 0; i < FIELD_SIZE; i++) {
 			fieldValues[i] += fieldVels[i];
+		}
+
+#define THING_STRENGTH 1
+		for (int i = 0; i < FIELD_SIZE; i++) {
+			if (fieldVels[i] < 0) {
+				fieldVels[i] += THING_STRENGTH;
+			}
+			else if (fieldVels[i] > 0) {
+				fieldVels[i] -= THING_STRENGTH;
+			}
 		}
 
 
