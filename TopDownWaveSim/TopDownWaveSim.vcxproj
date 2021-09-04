@@ -141,7 +141,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="debugOutput.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="selectOpenCLBindings.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="debugOutput.h" />
+    <ClInclude Include="selectOpenCLBindings.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

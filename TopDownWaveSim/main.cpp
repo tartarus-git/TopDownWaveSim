@@ -1,9 +1,13 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <windowsx.h>
+#include <windowsx.h>																												// Extentions to the main Windows.h header. I only have this in here for the GET_X_LPARAM and GET_Y_LPARAM macros in the message handler.
+
+#include "selectOpenCLBindings.h"
 
 #include <iostream>
 #include <thread>
+
+#include "debugOutput.h"
 
 #define FIELD_PULL 0.01f																											// The strength with which points on the field are forced to return to their origin.
 
@@ -18,6 +22,10 @@ bool isAlive = true;
 
 int mouseX = -1;
 int mouseY = -1;
+
+const char* computeKernel = "" \
+"__kernel void test() {\n" \
+"}";
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	switch (uMsg) {
@@ -39,6 +47,59 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, wchar_t* lpCmd
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine, int nCmdShow) {
 	std::cout << "Started program from WinMain entry point (ANSI)." << std::endl;
 #endif
+
+	cl_int err;
+
+	cl_uint platformCount;
+	err = clGetPlatformIDs(0, NULL, &platformCount);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "OpenCL error." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+	if (platformCount == 0) {
+		debuglogger::out << debuglogger::error << "Couldn't find any OpenCL platforms." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	debuglogger::out << "Available OpenCL platforms: " << platformCount << debuglogger::endl;
+
+	cl_platform_id computePlatformID;
+	err = clGetPlatformIDs(1, &computePlatformID, NULL);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Couldn't get the platform ID." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	cl_device_id computeDeviceID;
+	err = clGetDeviceIDs(computePlatformID, CL_DEVICE_TYPE_GPU, 1, &computeDeviceID, NULL);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Failed to retrieve device ID." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	cl_context computeContext = clCreateContext(NULL, 1, &computeDeviceID, NULL, NULL, &err);
+	if (!computeContext) {
+		debuglogger::out << debuglogger::error << "Failed to create a compute context." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	cl_command_queue computeCommandQueue = clCreateCommandQueue(computeContext, computeDeviceID, 0, &err);
+	if (!computeCommandQueue) {
+		debuglogger::out << debuglogger::error << "Failed to create a command queue for the compute device." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	cl_program computeProgram = clCreateProgramWithSource(computeContext, 1, &computeKernel, NULL, &err);
+	if (!computeProgram) {
+		debuglogger::out << debuglogger::error << "Failed to create compute program with the kernel source." << debuglogger::endl;
+		return EXIT_FAILURE;
+		// TODO: Make sure you dispose of everything even when you exit the program in a hurry.
+	}
+
+	err = clBuildProgram(computeProgram, 0, NULL, NULL, NULL, NULL);
+	if (err != CL_SUCCESS) {
+
+	}
 
 	const TCHAR CLASS_NAME[] = TEXT("WAVE_SIM_WINDOW");
 
@@ -172,7 +233,7 @@ void graphicsLoop(HWND hWnd) {
 			fieldValues[i] += fieldVels[i];
 		}
 
-#define THING_STRENGTH 1
+/*#define THING_STRENGTH 1
 		for (int i = 0; i < FIELD_SIZE; i++) {
 			if (fieldVels[i] < 0) {
 				fieldVels[i] += THING_STRENGTH;
@@ -180,7 +241,7 @@ void graphicsLoop(HWND hWnd) {
 			else if (fieldVels[i] > 0) {
 				fieldVels[i] -= THING_STRENGTH;
 			}
-		}
+		}*/
 
 
 		memcpy(lastFieldVels, fieldVels, FIELD_SIZE * sizeof(float));
