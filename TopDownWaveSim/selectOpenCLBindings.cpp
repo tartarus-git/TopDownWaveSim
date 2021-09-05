@@ -17,3 +17,7 @@ const clGetProgramBuildInfo_func clGetProgramBuildInfo = (clGetProgramBuildInfo_
 const clCreateKernel_func clCreateKernel = (clCreateKernel_func)GetProcAddress(DLLProcID, "clCreateKernel");
 const clCreateImage2D_func clCreateImage2D = (clCreateImage2D_func)GetProcAddress(DLLProcID, "clCreateImage2D");
 const clSetKernelArg_func clSetKernelArg = (clSetKernelArg_func)GetProcAddress(DLLProcID, "clSetKernelArg");
+
+void initOpenCLBindings() {
+	clGetPlatformInfo = (clGetPlatformInfo_func)GetProcAddress(DLLProcID, "clGetPlatformInfo");
+}

@@ -18,6 +18,12 @@
 int windowWidth = WINDOW_STARTING_WIDTH;
 int windowHeight = WINDOW_STARTING_HEIGHT;
 
+
+
+// TODO: Make sure you have enough delete[]'s and you dispose everything properly and stuff.
+
+
+
 void graphicsLoop(HWND hWnd);
 bool isAlive = true;
 
@@ -45,6 +51,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	std::cout << "Started program from WinMain entry point (ANSI)." << std::endl;
 #endif
 
+	initOpenCLBindings();
+
 	cl_int err;
 
 	cl_uint platformCount;
@@ -67,6 +75,24 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		return EXIT_FAILURE;
 	}
 
+	debuglogger::out << "Using one of the possible platforms." << debuglogger::endl;
+
+	size_t versionTextSize;
+	err = clGetPlatformInfo(computePlatformID, CL_PLATFORM_VERSION, 0, NULL, &versionTextSize);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Couldn't get platform version text size." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+	char* buffer = new char[versionTextSize];
+	err = clGetPlatformInfo(computePlatformID, CL_PLATFORM_VERSION, versionTextSize, buffer, NULL);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Failed to get platform version text." << debuglogger::endl;
+		delete[] buffer;
+		return EXIT_FAILURE;
+	}
+	debuglogger::out << "Platform version: " << buffer << debuglogger::endl;
+	delete[] buffer;
+
 	cl_device_id computeDeviceID;
 	err = clGetDeviceIDs(computePlatformID, CL_DEVICE_TYPE_GPU, 1, &computeDeviceID, NULL);
 	if (err != CL_SUCCESS) {
@@ -86,12 +112,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		return EXIT_FAILURE;
 	}
 
-	std::ifstream kernelSourceFile("wavePropagator.cl", std::ios::app);
-	if (kernelSourceFile.is_open()) {
-		kernelSourceFile.tellg();
+	std::ifstream kernelSourceFile("wavePropagator.cl", std::ios::beg);
+	if (!kernelSourceFile.is_open()) {
+		debuglogger::out << debuglogger::error << "Couldn't open kernel source file." << debuglogger::endl;
+		return EXIT_FAILURE;
 	}
 
-	cl_program computeProgram = clCreateProgramWithSource(computeContext, 1, &computeKernel, NULL, &err);
+#pragma push_macro(max)
+#undef max
+	kernelSourceFile.ignore(std::numeric_limits<std::streamsize>::max());
+#pragma pop_macro(max)
+	std::streamsize kernelSourceSize = kernelSourceFile.gcount();
+	char* kernelSource = new char[kernelSourceSize + 1];
+	kernelSourceFile.seekg(0, std::ios::beg);
+	kernelSourceFile.read(kernelSource, kernelSourceSize);
+	kernelSourceFile.close();
+	kernelSource[kernelSourceSize] = '\0';
+
+	cl_program computeProgram = clCreateProgramWithSource(computeContext, 1, (const char**)&kernelSource, NULL, &err);
+	delete[] kernelSource;
 	if (!computeProgram) {
 		debuglogger::out << debuglogger::error << "Failed to create compute program with the kernel source." << debuglogger::endl;
 		return EXIT_FAILURE;
@@ -111,11 +150,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		err = clGetProgramBuildInfo(computeProgram, computeDeviceID, CL_PROGRAM_BUILD_LOG, buildLogSize, buffer, NULL);
 		if (err != CL_SUCCESS) {
 			debuglogger::out << debuglogger::error << "Could not retrieve program build log." << debuglogger::endl;
+			return EXIT_FAILURE;
 		}
+		debuglogger::out << "BUILD LOG:" << debuglogger::endl << buffer << debuglogger::endl;
+		delete[] buffer;
 		return EXIT_FAILURE;
 	}
 
-	cl_kernel computeKernel = clCreateKernel(computeProgram, "test", &err);
+	cl_kernel computeKernel = clCreateKernel(computeProgram, "wavePropagator", &err);
 	if (!computeKernel) {
 		debuglogger::out << debuglogger::error << "Failed to create kernel." << debuglogger::endl;
 		return EXIT_FAILURE;
@@ -139,7 +181,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		return EXIT_FAILURE;
 	}
 
-	cl_mem fieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE, &computeImageFormat, windowWidth, windowHeight,
+	cl_mem lastFieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_ONLY, &computeImageFormat, windowWidth, windowHeight,
+		0, NULL, &err);
+	if (!lastFieldValues_computeImage) {
+		debuglogger::out << debuglogger::error << "Failed to create compute image for lastFieldVels." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	cl_mem fieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_WRITE_ONLY, &computeImageFormat, windowWidth, windowHeight,
 		0, NULL, &err);
 	if (!fieldValues_computeImage) {
 		debuglogger::out << debuglogger::error << "Failed to create compute image for fieldValues." << debuglogger::endl;
@@ -156,7 +205,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		debuglogger::out << debuglogger::error << "Couldn't set the fieldVels argument in kernel." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
-	err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &fieldValues_computeImage);
+	err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &lastFieldValues_computeImage);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Couldn't set the lastFieldValues argument in kernel." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+	err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &fieldValues_computeImage);
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "Couldn't set the fieldValues argument in kernel." << debuglogger::endl;
 		return EXIT_FAILURE;

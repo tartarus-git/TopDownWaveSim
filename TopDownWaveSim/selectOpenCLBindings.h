@@ -7,6 +7,12 @@
 
 #define CL_SUCCESS 0
 
+#define CL_PLATFORM_PROFILE                         0x0900
+#define CL_PLATFORM_VERSION                         0x0901
+#define CL_PLATFORM_NAME                            0x0902
+#define CL_PLATFORM_VENDOR                          0x0903
+#define CL_PLATFORM_EXTENSIONS                      0x0904
+
 #define CL_DEVICE_TYPE_DEFAULT                      (1 << 0)
 #define CL_DEVICE_TYPE_CPU                          (1 << 1)
 #define CL_DEVICE_TYPE_GPU                          (1 << 2)
@@ -59,6 +65,8 @@ typedef uint64_t cl_ulong;
 typedef cl_ulong cl_bitfield;
 
 typedef struct _cl_platform_id* cl_platform_id;
+typedef cl_uint cl_platform_info;
+
 typedef cl_bitfield cl_device_type;
 typedef struct _cl_device_id* cl_device_id;
 typedef struct _cl_context* cl_context;
@@ -145,3 +153,12 @@ typedef cl_int (CL_API_CALL* clSetKernelArg_func)(cl_kernel kernel,
     size_t arg_size,
     const void* arg_value);
 extern const clSetKernelArg_func clSetKernelArg;
+
+typedef cl_int (CL_API_CALL* clGetPlatformInfo_func)(cl_platform_id platform,
+    cl_platform_info param_name,
+    size_t param_value_size,
+    void* param_value,
+    size_t* param_value_size_ret);
+inline clGetPlatformInfo_func clGetPlatformInfo;
+
+void initOpenCLBindings();
