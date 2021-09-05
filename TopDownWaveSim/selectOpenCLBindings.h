@@ -12,6 +12,46 @@
 #define CL_DEVICE_TYPE_GPU                          (1 << 2)
 #define CL_DEVICE_TYPE_ACCELERATOR                  (1 << 3)
 
+#define CL_PROGRAM_BUILD_STATUS                     0x1181
+#define CL_PROGRAM_BUILD_OPTIONS                    0x1182
+#define CL_PROGRAM_BUILD_LOG                        0x1183
+
+#define CL_MEM_READ_WRITE                           (1 << 0)
+#define CL_MEM_WRITE_ONLY                           (1 << 1)
+#define CL_MEM_READ_ONLY                            (1 << 2)
+#define CL_MEM_USE_HOST_PTR                         (1 << 3)
+#define CL_MEM_ALLOC_HOST_PTR                       (1 << 4)
+#define CL_MEM_COPY_HOST_PTR                        (1 << 5)
+
+#define CL_R                                        0x10B0
+#define CL_A                                        0x10B1
+#define CL_RG                                       0x10B2
+#define CL_RA                                       0x10B3
+#define CL_RGB                                      0x10B4
+#define CL_RGBA                                     0x10B5
+#define CL_BGRA                                     0x10B6
+#define CL_ARGB                                     0x10B7
+#define CL_INTENSITY                                0x10B8
+#define CL_LUMINANCE                                0x10B9
+
+#define CL_SNORM_INT8                               0x10D0
+#define CL_SNORM_INT16                              0x10D1
+#define CL_UNORM_INT8                               0x10D2
+#define CL_UNORM_INT16                              0x10D3
+#define CL_UNORM_SHORT_565                          0x10D4
+#define CL_UNORM_SHORT_555                          0x10D5
+#define CL_UNORM_INT_101010                         0x10D6
+#define CL_SIGNED_INT8                              0x10D7
+#define CL_SIGNED_INT16                             0x10D8
+#define CL_SIGNED_INT32                             0x10D9
+#define CL_UNSIGNED_INT8                            0x10DA
+#define CL_UNSIGNED_INT16                           0x10DB
+#define CL_UNSIGNED_INT32                           0x10DC
+#define CL_HALF_FLOAT                               0x10DD
+#define CL_FLOAT                                    0x10DE
+
+#define CL_FLOAT_SIZE 4
+
 typedef int32_t cl_int;
 typedef uint32_t cl_uint;
 typedef uint64_t cl_ulong;
@@ -27,6 +67,20 @@ typedef struct _cl_command_queue* cl_command_queue;
 typedef cl_bitfield cl_command_queue_properties;
 
 typedef struct _cl_program* cl_program;
+typedef cl_uint cl_program_build_info;
+
+typedef struct _cl_kernel* cl_kernel;
+
+typedef struct _cl_mem* cl_mem;
+typedef cl_bitfield cl_mem_flags;
+
+typedef cl_uint             cl_channel_order;
+typedef cl_uint             cl_channel_type;
+
+struct cl_image_format {
+    cl_channel_order image_channel_order;
+    cl_channel_type image_channel_data_type;
+};
 
 typedef cl_int (CL_API_CALL* clGetPlatformIDs_func)(cl_uint num_entries, cl_platform_id* platforms, cl_uint* num_platforms);
 extern const clGetPlatformIDs_func clGetPlatformIDs;
@@ -62,3 +116,32 @@ typedef cl_int (CL_API_CALL* clBuildProgram_func)(cl_program program,
     void (CL_CALLBACK* pfn_notify)(cl_program program, void* user_data),
     void* user_data);
 extern const clBuildProgram_func clBuildProgram;
+
+typedef cl_int (CL_API_CALL* clGetProgramBuildInfo_func)(cl_program program,
+    cl_device_id device,
+    cl_program_build_info param_name,
+    size_t param_value_size,
+    void* param_value,
+    size_t* param_value_size_ret);
+extern const clGetProgramBuildInfo_func clGetProgramBuildInfo;
+
+typedef cl_kernel (CL_API_CALL* clCreateKernel_func)(cl_program program,
+    const char* kernel_name,
+    cl_int* errcode_ret);
+extern const clCreateKernel_func clCreateKernel;
+
+typedef cl_mem (CL_API_CALL* clCreateImage2D_func)(cl_context context,
+    cl_mem_flags flags,
+    const cl_image_format* image_format,
+    size_t image_width,
+    size_t image_height,
+    size_t image_row_pitch,
+    void* host_ptr,
+    cl_int* errcode_ret);
+extern const clCreateImage2D_func clCreateImage2D;
+
+typedef cl_int (CL_API_CALL* clSetKernelArg_func)(cl_kernel kernel,
+    cl_uint arg_index,
+    size_t arg_size,
+    const void* arg_value);
+extern const clSetKernelArg_func clSetKernelArg;

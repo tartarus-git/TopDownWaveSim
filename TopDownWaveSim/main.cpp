@@ -5,6 +5,7 @@
 #include "selectOpenCLBindings.h"
 
 #include <iostream>
+#include <fstream>
 #include <thread>
 
 #include "debugOutput.h"
@@ -22,10 +23,6 @@ bool isAlive = true;
 
 int mouseX = -1;
 int mouseY = -1;
-
-const char* computeKernel = "" \
-"__kernel void test() {\n" \
-"}";
 
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	switch (uMsg) {
@@ -89,6 +86,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		return EXIT_FAILURE;
 	}
 
+	std::ifstream kernelSourceFile("wavePropagator.cl", std::ios::app);
+	if (kernelSourceFile.is_open()) {
+		kernelSourceFile.tellg();
+	}
+
 	cl_program computeProgram = clCreateProgramWithSource(computeContext, 1, &computeKernel, NULL, &err);
 	if (!computeProgram) {
 		debuglogger::out << debuglogger::error << "Failed to create compute program with the kernel source." << debuglogger::endl;
@@ -98,8 +100,69 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 
 	err = clBuildProgram(computeProgram, 0, NULL, NULL, NULL, NULL);
 	if (err != CL_SUCCESS) {
-
+		debuglogger::out << debuglogger::error << "Failed to build compute program." << debuglogger::endl;
+		size_t buildLogSize;
+		err = clGetProgramBuildInfo(computeProgram, computeDeviceID, CL_PROGRAM_BUILD_LOG, 0, NULL, &buildLogSize);
+		if (err != CL_SUCCESS) {
+			debuglogger::out << debuglogger::error << "Could not get program build log size." << debuglogger::endl;
+			return EXIT_FAILURE;
+		}
+		char* buffer = new char[buildLogSize];
+		err = clGetProgramBuildInfo(computeProgram, computeDeviceID, CL_PROGRAM_BUILD_LOG, buildLogSize, buffer, NULL);
+		if (err != CL_SUCCESS) {
+			debuglogger::out << debuglogger::error << "Could not retrieve program build log." << debuglogger::endl;
+		}
+		return EXIT_FAILURE;
 	}
+
+	cl_kernel computeKernel = clCreateKernel(computeProgram, "test", &err);
+	if (!computeKernel) {
+		debuglogger::out << debuglogger::error << "Failed to create kernel." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	cl_image_format computeImageFormat;				// TODO: See if you can use an initializer list for this instead and see if it is as efficient.
+	computeImageFormat.image_channel_order = CL_R;
+	computeImageFormat.image_channel_data_type = CL_FLOAT;
+
+	cl_mem lastFieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_ONLY, &computeImageFormat, windowWidth, windowHeight,
+		0, NULL, &err);
+	if (!lastFieldVels_computeImage) {
+		debuglogger::out << debuglogger::error << "Failed to create compute image for lastFieldVels." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	cl_mem fieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_WRITE_ONLY, &computeImageFormat, windowWidth, windowHeight,
+		0, NULL, &err);
+	if (!fieldVels_computeImage) {
+		debuglogger::out << debuglogger::error << "Failed to create compute image for fieldVels." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	cl_mem fieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE, &computeImageFormat, windowWidth, windowHeight,
+		0, NULL, &err);
+	if (!fieldValues_computeImage) {
+		debuglogger::out << debuglogger::error << "Failed to create compute image for fieldValues." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &lastFieldVels_computeImage);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Couldn't set the lastFieldVels argument in kernel." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+	err = clSetKernelArg(computeKernel, 1, sizeof(cl_mem), &fieldVels_computeImage);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Couldn't set the fieldVels argument in kernel." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+	err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &fieldValues_computeImage);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Couldn't set the fieldValues argument in kernel." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+
 
 	const TCHAR CLASS_NAME[] = TEXT("WAVE_SIM_WINDOW");
 

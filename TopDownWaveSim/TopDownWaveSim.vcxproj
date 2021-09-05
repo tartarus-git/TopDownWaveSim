@@ -149,6 +149,9 @@
     <ClInclude Include="debugOutput.h" />
     <ClInclude Include="selectOpenCLBindings.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="wavePropagator.cl" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
