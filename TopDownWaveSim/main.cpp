@@ -193,28 +193,28 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	computeImageFormat.image_channel_order = CL_R;
 	computeImageFormat.image_channel_data_type = CL_FLOAT;
 
-	lastFieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_ONLY, &computeImageFormat, windowWidth, windowHeight,
+	lastFieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, &computeImageFormat, windowWidth, windowHeight,
 		0, lastFieldVels, &err);
 	if (!lastFieldVels_computeImage) {
 		debuglogger::out << debuglogger::error << "Failed to create compute image for lastFieldVels." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
 
-	fieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_WRITE_ONLY, &computeImageFormat, windowWidth, windowHeight,
+	fieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE, &computeImageFormat, windowWidth, windowHeight,
 		0, NULL, &err);
 	if (!fieldVels_computeImage) {
 		debuglogger::out << debuglogger::error << "Failed to create compute image for fieldVels." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
 
-	lastFieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_ONLY, &computeImageFormat, windowWidth, windowHeight,
+	lastFieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, &computeImageFormat, windowWidth, windowHeight,
 		0, lastFieldValues, &err);
 	if (!lastFieldValues_computeImage) {
-		debuglogger::out << debuglogger::error << "Failed to create compute image for lastFieldVels." << debuglogger::endl;
+		debuglogger::out << debuglogger::error << "Failed to create compute image for lastFieldValues." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
 
-	fieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_WRITE_ONLY, &computeImageFormat, windowWidth, windowHeight,
+	fieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE, &computeImageFormat, windowWidth, windowHeight,
 		0, NULL, &err);
 	if (!fieldValues_computeImage) {
 		debuglogger::out << debuglogger::error << "Failed to create compute image for fieldValues." << debuglogger::endl;
@@ -360,26 +360,26 @@ void graphicsLoop(HWND hWnd) {
 
 	cl_int err;
 
-	bool state = false;
+	bool state = true;
 
 	while (isAlive) {																											// Start the actual graphics loop.
 
 		if (mouseX != -1) {
 			if (state) {
-				fieldValues[mouseX + mouseY * windowWidth] = 10000;
-				size_t origin[2] = { 0, 0 };
-				size_t region[2] = { windowWidth, windowHeight };
-				err = clEnqueueWriteImage(computeCommandQueue, fieldValues_computeImage, true, origin, region, 0, 0, fieldValues, 0, nullptr, nullptr);
+				float thing = 10000;
+				size_t origin[3] = { mouseX, mouseY, 0 };
+				size_t region[3] = { 1, 1, 1 };
+				err = clEnqueueWriteImage(computeCommandQueue, lastFieldValues_computeImage, true, origin, region, 0, 0, &thing, 0, nullptr, nullptr);
 				if (err != CL_SUCCESS) {
 					debuglogger::out << debuglogger::error << "couldn't write mouse update to compute device memory" << debuglogger::endl;
 					// TODO: Figure out a way to exit from here.
 				}
 			}
 			else {
-				lastFieldValues[mouseX + mouseY * windowWidth] = 10000;
-				size_t origin[2] = { 0, 0 };
-				size_t region[2] = { windowWidth, windowHeight };
-				err = clEnqueueWriteImage(computeCommandQueue, lastFieldValues_computeImage, true, origin, region, 0, 0, lastFieldValues, 0, nullptr, nullptr);
+				float thing = 10000;
+				size_t origin[3] = { mouseX, mouseY, 0};
+				size_t region[3] = { 1, 1, 1 };
+				err = clEnqueueWriteImage(computeCommandQueue, fieldValues_computeImage, true, origin, region, 0, 0, &thing, 0, nullptr, nullptr);
 				if (err != CL_SUCCESS) {
 					debuglogger::out << debuglogger::error << "couldn't write mouse update to compute device memory" << debuglogger::endl;
 					// TODO: Figure out a way to exit from here.
@@ -388,7 +388,7 @@ void graphicsLoop(HWND hWnd) {
 			mouseX = -1;
 		}
 
-		size_t globalSize[2] = { windowWidth, windowHeight };
+		size_t globalSize[2] = { 512, windowHeight };
 		size_t localSize[2] = { workGroupSize, 1 };
 		err = clEnqueueNDRangeKernel(computeCommandQueue, computeKernel, 2, nullptr, globalSize, localSize, 0, nullptr, nullptr);
 		if (err != CL_SUCCESS) {
@@ -396,12 +396,7 @@ void graphicsLoop(HWND hWnd) {
 			// TODO: Implement some way of exiting from inside the graphics thread loop.
 		}
 
-		if (state) {
-			err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), lastFieldValue);
-		}
-		else {
-
-		}
+		
 
 		err = clFinish(computeCommandQueue);
 		if (err != CL_SUCCESS) {
@@ -409,7 +404,52 @@ void graphicsLoop(HWND hWnd) {
 			// TODO: Find a way to exit program from here.
 		}
 
+		if (state) {
+			err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &fieldVels_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+			err = clSetKernelArg(computeKernel, 1, sizeof(cl_mem), &lastFieldVels_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+			err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &fieldValues_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+			err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &lastFieldValues_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+		}
+		else {
+			err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &lastFieldVels_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+			err = clSetKernelArg(computeKernel, 1, sizeof(cl_mem), &fieldVels_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+			err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &lastFieldValues_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+			err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &fieldValues_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+		}
 
+		state = !state;
 
 
 /*#define THING_STRENGTH 1
@@ -422,24 +462,43 @@ void graphicsLoop(HWND hWnd) {
 			}
 		}*/
 
-
-		memcpy(lastFieldVels, fieldVels, FIELD_SIZE * sizeof(float));
+		float* endFieldValues = new float[FIELD_SIZE];
+		if (state) {
+			size_t origin[3] = { 0, 0, 0 };
+			size_t region[3] = { windowWidth, windowHeight, 1 };
+			err = clEnqueueReadImage(computeCommandQueue, fieldValues_computeImage, true, origin, region, 0, 0, endFieldValues, 0, nullptr, nullptr);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed to read image data from compute device" << debuglogger::endl;
+				// TODO: Figure out escape strat here.
+			}
+		}
+		else {
+			size_t origin[3] = { 0, 0, 0 };
+			size_t region[3] = { windowWidth, windowHeight, 1 };
+			err = clEnqueueReadImage(computeCommandQueue, lastFieldValues_computeImage, true, origin, region, 0, 0, endFieldValues, 0, nullptr, nullptr);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed to read image data from compute device" << debuglogger::endl;
+				// TODO: Figure out escape strat here.
+			}
+		}
 
 		for (int i = 0; i < FIELD_SIZE; i++) {
 			int frameIndex = i * 4;
-			if (fieldValues[i] > 0) {
-				frame[frameIndex + 1] = clamp(fieldValues[i], 100) / 100 * 255;
+			if (endFieldValues[i] > 0) {
+				frame[frameIndex + 1] = clamp(endFieldValues[i], 100) / 100 * 255;
 				frame[frameIndex + 2] = 0;
 			}
-			else if (fieldValues[i] == 0) {
+			else if (endFieldValues[i] == 0) {
 				frame[frameIndex + 1] = 0;
 				frame[frameIndex + 2] = 0;
 			}
 			else {
 				frame[frameIndex + 1] = 0;
-				frame[frameIndex + 2] = clamp((-fieldValues[i]), 100) / 100 * 255;
+				frame[frameIndex + 2] = clamp((-endFieldValues[i]), 100) / 100 * 255;
 			}
 		}
+
+		delete[] endFieldValues;
 
 		SetBitmapBits(bmp, FRAME_SIZE, frame);																				// Copy the current frame data into the bitmap, so that it is displayed on the window.
 		BitBlt(finalG, 0, 0, WINDOW_STARTING_WIDTH, WINDOW_STARTING_HEIGHT, g, 0, 0, SRCCOPY);

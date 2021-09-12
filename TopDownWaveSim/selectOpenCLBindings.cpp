@@ -25,4 +25,5 @@ bool initOpenCLBindings() {
 	CHECK_FUNC_VALIDITY(clFinish = (clFinish_func)GetProcAddress(DLLProcID, "clFinish"));
 	CHECK_FUNC_VALIDITY(clEnqueueWriteBuffer = (clEnqueueWriteBuffer_func)GetProcAddress(DLLProcID, "clEnqueueWriteBuffer"));
 	CHECK_FUNC_VALIDITY(clEnqueueWriteImage = (clEnqueueWriteImage_func)GetProcAddress(DLLProcID, "clEnqueueWriteImage"));
+	CHECK_FUNC_VALIDITY(clEnqueueReadImage = (clEnqueueReadImage_func)GetProcAddress(DLLProcID, "clEnqueueReadImage"));
 }
