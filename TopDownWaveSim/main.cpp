@@ -43,6 +43,20 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 	return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
 
+float* lastFieldVels;
+float* lastFieldValues;
+float* fieldVels;
+float* fieldValues;
+
+size_t workGroupSize;
+cl_command_queue computeCommandQueue;
+cl_kernel computeKernel;
+
+cl_mem lastFieldValues_computeImage;
+cl_mem lastFieldVels_computeImage;
+cl_mem fieldValues_computeImage;
+cl_mem fieldVels_computeImage;
+
 #ifdef UNICODE
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, wchar_t* lpCmdLine, int nCmdShow) {
 	std::cout << "Started program from wWinMain entry point (UNICODE)." << std::endl;
@@ -51,7 +65,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	std::cout << "Started program from WinMain entry point (ANSI)." << std::endl;
 #endif
 
-	initOpenCLBindings();
+	if (!initOpenCLBindings()) {
+		debuglogger::out << debuglogger::error << "couldn't initialize OpenCL bindings" << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+
+	#define FIELD_SIZE (WINDOW_STARTING_WIDTH * WINDOW_STARTING_HEIGHT)
+	fieldValues = new float[FIELD_SIZE];
+	fieldVels = new float[FIELD_SIZE];
+
+	lastFieldValues = new float[FIELD_SIZE];
+	ZeroMemory(lastFieldValues, FIELD_SIZE * sizeof(float));
+	lastFieldVels = new float[FIELD_SIZE];
+	ZeroMemory(lastFieldVels, FIELD_SIZE * sizeof(float));
 
 	cl_int err;
 
@@ -106,7 +132,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		return EXIT_FAILURE;
 	}
 
-	cl_command_queue computeCommandQueue = clCreateCommandQueue(computeContext, computeDeviceID, 0, &err);
+	computeCommandQueue = clCreateCommandQueue(computeContext, computeDeviceID, 0, &err);
 	if (!computeCommandQueue) {
 		debuglogger::out << debuglogger::error << "Failed to create a command queue for the compute device." << debuglogger::endl;
 		return EXIT_FAILURE;
@@ -157,7 +183,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		return EXIT_FAILURE;
 	}
 
-	cl_kernel computeKernel = clCreateKernel(computeProgram, "wavePropagator", &err);
+	computeKernel = clCreateKernel(computeProgram, "wavePropagator", &err);
 	if (!computeKernel) {
 		debuglogger::out << debuglogger::error << "Failed to create kernel." << debuglogger::endl;
 		return EXIT_FAILURE;
@@ -167,28 +193,28 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	computeImageFormat.image_channel_order = CL_R;
 	computeImageFormat.image_channel_data_type = CL_FLOAT;
 
-	cl_mem lastFieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_ONLY, &computeImageFormat, windowWidth, windowHeight,
-		0, NULL, &err);
+	lastFieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_ONLY, &computeImageFormat, windowWidth, windowHeight,
+		0, lastFieldVels, &err);
 	if (!lastFieldVels_computeImage) {
 		debuglogger::out << debuglogger::error << "Failed to create compute image for lastFieldVels." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
 
-	cl_mem fieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_WRITE_ONLY, &computeImageFormat, windowWidth, windowHeight,
+	fieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_WRITE_ONLY, &computeImageFormat, windowWidth, windowHeight,
 		0, NULL, &err);
 	if (!fieldVels_computeImage) {
 		debuglogger::out << debuglogger::error << "Failed to create compute image for fieldVels." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
 
-	cl_mem lastFieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_ONLY, &computeImageFormat, windowWidth, windowHeight,
-		0, NULL, &err);
+	lastFieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_ONLY, &computeImageFormat, windowWidth, windowHeight,
+		0, lastFieldValues, &err);
 	if (!lastFieldValues_computeImage) {
 		debuglogger::out << debuglogger::error << "Failed to create compute image for lastFieldVels." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
 
-	cl_mem fieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_WRITE_ONLY, &computeImageFormat, windowWidth, windowHeight,
+	fieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_WRITE_ONLY, &computeImageFormat, windowWidth, windowHeight,
 		0, NULL, &err);
 	if (!fieldValues_computeImage) {
 		debuglogger::out << debuglogger::error << "Failed to create compute image for fieldValues." << debuglogger::endl;
@@ -217,6 +243,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	}
 
 
+	err = clGetKernelWorkGroupInfo(computeKernel, computeDeviceID, CL_KERNEL_WORK_GROUP_SIZE, sizeof(workGroupSize), &workGroupSize, nullptr);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "couldn't get optimal kernel work group size" << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
 
 	const TCHAR CLASS_NAME[] = TEXT("WAVE_SIM_WINDOW");
 
@@ -255,9 +286,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	graphicsThread.join();
 }
 
-float* lastFieldVels;
-float* fieldVels;
-float* fieldValues;
+
 
 #define TO_FIELD_INDEX(x, y) (y * windowWidth + x)				// TODO: Instead of relying on this, use 2D arrays, they do exactly this but behind the scenes so that your code looks nicer. Of course, maybe don't if you think you can be more efficient with the multiplying using this way.
 #define NODE_EQUALIZATION_STRENGTH 0.1f
@@ -308,13 +337,7 @@ void graphicsLoop(HWND hWnd) {
 	HBITMAP bmp = CreateCompatibleBitmap(finalG, WINDOW_STARTING_WIDTH, WINDOW_STARTING_HEIGHT);
 	SelectObject(g, bmp);
 
-#define FIELD_SIZE (WINDOW_STARTING_WIDTH * WINDOW_STARTING_HEIGHT)
-	fieldValues = new float[FIELD_SIZE];
-	ZeroMemory(fieldValues, FIELD_SIZE * sizeof(float));
-	fieldVels = new float[FIELD_SIZE];
 
-	lastFieldVels = new float[FIELD_SIZE];
-	ZeroMemory(lastFieldVels, FIELD_SIZE * sizeof(float));
 
 	/*for (int i = 0; i < 900; i++) {
 		fieldValues[i] = 100;
@@ -335,20 +358,59 @@ void graphicsLoop(HWND hWnd) {
 		frame[i + 3] = 255;
 	}
 
+	cl_int err;
+
+	bool state = false;
+
 	while (isAlive) {																											// Start the actual graphics loop.
 
 		if (mouseX != -1) {
-			fieldValues[mouseX + mouseY * windowWidth] = 10000;
+			if (state) {
+				fieldValues[mouseX + mouseY * windowWidth] = 10000;
+				size_t origin[2] = { 0, 0 };
+				size_t region[2] = { windowWidth, windowHeight };
+				err = clEnqueueWriteImage(computeCommandQueue, fieldValues_computeImage, true, origin, region, 0, 0, fieldValues, 0, nullptr, nullptr);
+				if (err != CL_SUCCESS) {
+					debuglogger::out << debuglogger::error << "couldn't write mouse update to compute device memory" << debuglogger::endl;
+					// TODO: Figure out a way to exit from here.
+				}
+			}
+			else {
+				lastFieldValues[mouseX + mouseY * windowWidth] = 10000;
+				size_t origin[2] = { 0, 0 };
+				size_t region[2] = { windowWidth, windowHeight };
+				err = clEnqueueWriteImage(computeCommandQueue, lastFieldValues_computeImage, true, origin, region, 0, 0, lastFieldValues, 0, nullptr, nullptr);
+				if (err != CL_SUCCESS) {
+					debuglogger::out << debuglogger::error << "couldn't write mouse update to compute device memory" << debuglogger::endl;
+					// TODO: Figure out a way to exit from here.
+				}
+			}
 			mouseX = -1;
 		}
 
-		for (int i = 0; i < FIELD_SIZE; i++) {
-			calculate(i % windowWidth, i / windowWidth);
+		size_t globalSize[2] = { windowWidth, windowHeight };
+		size_t localSize[2] = { workGroupSize, 1 };
+		err = clEnqueueNDRangeKernel(computeCommandQueue, computeKernel, 2, nullptr, globalSize, localSize, 0, nullptr, nullptr);
+		if (err != CL_SUCCESS) {
+			debuglogger::out << debuglogger::error << "failed to enqueue kernel" << debuglogger::endl;
+			// TODO: Implement some way of exiting from inside the graphics thread loop.
 		}
 
-		for (int i = 0; i < FIELD_SIZE; i++) {
-			fieldValues[i] += fieldVels[i];
+		if (state) {
+			err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), lastFieldValue);
 		}
+		else {
+
+		}
+
+		err = clFinish(computeCommandQueue);
+		if (err != CL_SUCCESS) {
+			debuglogger::out << debuglogger::error << "failed to wait for compute kernel to finish" << debuglogger::endl;
+			// TODO: Find a way to exit program from here.
+		}
+
+
+
 
 /*#define THING_STRENGTH 1
 		for (int i = 0; i < FIELD_SIZE; i++) {

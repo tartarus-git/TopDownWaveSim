@@ -56,11 +56,18 @@
 #define CL_HALF_FLOAT                               0x10DD
 #define CL_FLOAT                                    0x10DE
 
+#define CL_KERNEL_WORK_GROUP_SIZE                   0x11B0
+#define CL_KERNEL_COMPILE_WORK_GROUP_SIZE           0x11B1
+#define CL_KERNEL_LOCAL_MEM_SIZE                    0x11B2
+#define CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE 0x11B3
+#define CL_KERNEL_PRIVATE_MEM_SIZE                  0x11B4
+
 #define CL_FLOAT_SIZE 4
 
 typedef int32_t cl_int;
 typedef uint32_t cl_uint;
 typedef uint64_t cl_ulong;
+typedef cl_uint cl_bool;
 
 typedef cl_ulong cl_bitfield;
 
@@ -78,6 +85,7 @@ typedef struct _cl_program* cl_program;
 typedef cl_uint cl_program_build_info;
 
 typedef struct _cl_kernel* cl_kernel;
+typedef cl_uint cl_kernel_work_group_info;
 
 typedef struct _cl_mem* cl_mem;
 typedef cl_bitfield cl_mem_flags;
@@ -85,16 +93,25 @@ typedef cl_bitfield cl_mem_flags;
 typedef cl_uint             cl_channel_order;
 typedef cl_uint             cl_channel_type;
 
+typedef struct _cl_event* cl_event;
+
 struct cl_image_format {
     cl_channel_order image_channel_order;
     cl_channel_type image_channel_data_type;
 };
 
 typedef cl_int (CL_API_CALL* clGetPlatformIDs_func)(cl_uint num_entries, cl_platform_id* platforms, cl_uint* num_platforms);
-extern const clGetPlatformIDs_func clGetPlatformIDs;
+inline clGetPlatformIDs_func clGetPlatformIDs;
+
+typedef cl_int (CL_API_CALL* clGetPlatformInfo_func)(cl_platform_id platform,
+    cl_platform_info param_name,
+    size_t param_value_size,
+    void* param_value,
+    size_t* param_value_size_ret);
+inline clGetPlatformInfo_func clGetPlatformInfo;
 
 typedef cl_int (CL_API_CALL* clGetDeviceIDs_func)(cl_platform_id platform, cl_device_type device_type, cl_uint num_entries, cl_device_id* devices, cl_uint* num_devices);
-extern const clGetDeviceIDs_func clGetDeviceIDs;
+inline clGetDeviceIDs_func clGetDeviceIDs;
 
 typedef cl_context (CL_API_CALL* clCreateContext_func)(const cl_context_properties* properties,
     cl_uint num_devices,
@@ -102,20 +119,20 @@ typedef cl_context (CL_API_CALL* clCreateContext_func)(const cl_context_properti
     void (CL_CALLBACK* pfn_notify)(const char* errinfo, const void* private_info, size_t cb, void* user_data),
     void* user_data,
     cl_int* errcode_ret);
-extern const clCreateContext_func clCreateContext;
+inline clCreateContext_func clCreateContext;
 
 typedef cl_command_queue (CL_API_CALL* clCreateCommandQueue_func)(cl_context context,
     cl_device_id device,
     cl_command_queue_properties properties,
     cl_int* errcode_ret);
-extern const clCreateCommandQueue_func clCreateCommandQueue;
+inline clCreateCommandQueue_func clCreateCommandQueue;
 
 typedef cl_program (CL_API_CALL* clCreateProgramWithSource_func)(cl_context context,
     cl_uint count,
     const char** strings,
     const size_t* lengths,
     cl_int* errcode_ret);
-extern const clCreateProgramWithSource_func clCreateProgramWithSource;
+inline clCreateProgramWithSource_func clCreateProgramWithSource;
 
 typedef cl_int (CL_API_CALL* clBuildProgram_func)(cl_program program,
     cl_uint num_devices,
@@ -123,7 +140,7 @@ typedef cl_int (CL_API_CALL* clBuildProgram_func)(cl_program program,
     const char* options,
     void (CL_CALLBACK* pfn_notify)(cl_program program, void* user_data),
     void* user_data);
-extern const clBuildProgram_func clBuildProgram;
+inline clBuildProgram_func clBuildProgram;
 
 typedef cl_int (CL_API_CALL* clGetProgramBuildInfo_func)(cl_program program,
     cl_device_id device,
@@ -131,12 +148,12 @@ typedef cl_int (CL_API_CALL* clGetProgramBuildInfo_func)(cl_program program,
     size_t param_value_size,
     void* param_value,
     size_t* param_value_size_ret);
-extern const clGetProgramBuildInfo_func clGetProgramBuildInfo;
+inline clGetProgramBuildInfo_func clGetProgramBuildInfo;
 
 typedef cl_kernel (CL_API_CALL* clCreateKernel_func)(cl_program program,
     const char* kernel_name,
     cl_int* errcode_ret);
-extern const clCreateKernel_func clCreateKernel;
+inline clCreateKernel_func clCreateKernel;
 
 typedef cl_mem (CL_API_CALL* clCreateImage2D_func)(cl_context context,
     cl_mem_flags flags,
@@ -146,19 +163,58 @@ typedef cl_mem (CL_API_CALL* clCreateImage2D_func)(cl_context context,
     size_t image_row_pitch,
     void* host_ptr,
     cl_int* errcode_ret);
-extern const clCreateImage2D_func clCreateImage2D;
+inline clCreateImage2D_func clCreateImage2D;
 
 typedef cl_int (CL_API_CALL* clSetKernelArg_func)(cl_kernel kernel,
     cl_uint arg_index,
     size_t arg_size,
     const void* arg_value);
-extern const clSetKernelArg_func clSetKernelArg;
+inline clSetKernelArg_func clSetKernelArg;
 
-typedef cl_int (CL_API_CALL* clGetPlatformInfo_func)(cl_platform_id platform,
-    cl_platform_info param_name,
+typedef cl_int (CL_API_CALL* clGetKernelWorkGroupInfo_func)(cl_kernel kernel,
+    cl_device_id device,
+    cl_kernel_work_group_info param_name,
     size_t param_value_size,
     void* param_value,
     size_t* param_value_size_ret);
-inline clGetPlatformInfo_func clGetPlatformInfo;
+inline clGetKernelWorkGroupInfo_func clGetKernelWorkGroupInfo;
 
-void initOpenCLBindings();
+typedef cl_int (CL_API_CALL* clEnqueueNDRangeKernel_func)(cl_command_queue command_queue,
+    cl_kernel kernel,
+    cl_uint work_dim,
+    const size_t* global_work_offset,
+    const size_t* global_work_size,
+    const size_t* local_work_size,
+    cl_uint num_events_in_wait_list,
+    const cl_event* event_wait_list,
+    cl_event* event);
+inline clEnqueueNDRangeKernel_func clEnqueueNDRangeKernel;
+
+typedef cl_int (CL_API_CALL* clFinish_func)(cl_command_queue command_queue);
+inline clFinish_func clFinish;
+
+typedef cl_int (CL_API_CALL* clEnqueueWriteBuffer_func)(cl_command_queue command_queue,
+    cl_mem buffer,
+    cl_bool blocking_write,
+    size_t offset,
+    size_t size,
+    const void* ptr,
+    cl_uint num_events_in_wait_list,
+    const cl_event* event_wait_list,
+    cl_event* event);
+inline clEnqueueWriteBuffer_func clEnqueueWriteBuffer;
+
+typedef cl_int (CL_API_CALL* clEnqueueWriteImage_func)(cl_command_queue command_queue,
+    cl_mem image,
+    cl_bool blocking_write,
+    const size_t* origin,
+    const size_t* region,
+    size_t input_row_pitch,
+    size_t input_slice_pitch,
+    const void* ptr,
+    cl_uint num_events_in_wait_list,
+    const cl_event* event_wait_list,
+    cl_event* event);
+inline clEnqueueWriteImage_func clEnqueueWriteImage;
+
+bool initOpenCLBindings();
