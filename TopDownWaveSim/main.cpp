@@ -449,7 +449,7 @@ void graphicsLoop(HWND hWnd) {
 			}
 		}
 
-		state = !state;
+
 
 
 /*#define THING_STRENGTH 1
@@ -481,6 +481,8 @@ void graphicsLoop(HWND hWnd) {
 				// TODO: Figure out escape strat here.
 			}
 		}
+
+		state = !state;
 
 		for (int i = 0; i < FIELD_SIZE; i++) {
 			int frameIndex = i * 4;
