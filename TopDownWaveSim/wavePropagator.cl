@@ -1,8 +1,6 @@
 #define NODE_EQUALIZATION_STRENGTH 0.00000001f						// Strength with which nodes are pulled toward each other.
 #define FIELD_PULL 0.01f									// Strength at which nodes are pulled back to the field zero level.
 
-#define TO_COLOR(x) ((float4)(x, 0, 0, 0))					// Converter define because OpenCL expects the value in the red channel.
-
 // Area that should be influenced through equalization. __constant instead of const because it is better optimized across all platforms.
 __constant int influenceAreaX[] = { 1, -1,  0,  0,  1, -1,  1, -1,  0, -2,  2,  0 };
 __constant int influenceAreaY[] = { 0,  0, -1,  1, -1, -1,  1,  1, -2,  0,  0,  2 };
@@ -30,7 +28,7 @@ __kernel void wavePropagator(__read_only image2d_t lastFieldValues, __read_only 
 		else if (prevValue < 0) { vel = prevVel + FIELD_PULL; }
 		else { vel = prevVel; }
 
-		for (int i = 0; i < INFLUENCE_AREA_COUNT; i++) {							// Calculate equalization for all nodes in influence area.
+		for (int i = 0; i < INFLUENCE_AREA_COUNT; i++) {						// Calculate equalization for all nodes in influence area.
 			int relativeX = influenceAreaX[i];									// Check if the node in question is out of bounds.
 			int absoluteX = coords.x + relativeX;
 			if (absoluteX >= windowWidth || absoluteX < 0) { continue; }
@@ -43,6 +41,9 @@ __kernel void wavePropagator(__read_only image2d_t lastFieldValues, __read_only 
 					sqrt((float)(relativeX * relativeX + relativeY * relativeY)));
 		}
 
-		write_imagef(fieldValues, coords, TO_COLOR(prevValue + vel));			// New value is equal to old value plus velocity.
-		write_imagef(fieldVels, coords, TO_COLOR(vel));							// New velocity was already calculated, just put it in.
+		// (float4)(x, 0, 0, 0) would construct a temporary each time. Instead we make our own temporary and use it twice, better in theory.
+		float4 colorHull = (float4)(vel, 0, 0, 0);								// Velocity was already calculated so just put it in here.
+		write_imagef(fieldVels, coords, colorHull);
+		colorHull.x += prevPos;													// Add prevPos to vel, thereby calculating new position.
+		write_imagef(fieldValues, coords, colorHull);
 }
