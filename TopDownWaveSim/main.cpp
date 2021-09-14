@@ -6,7 +6,9 @@
 
 #include <iostream>
 #include <fstream>
+
 #include <thread>
+#include <chrono>
 
 #include "debugOutput.h"
 
@@ -241,6 +243,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		debuglogger::out << debuglogger::error << "Couldn't set the fieldValues argument in kernel." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
+	
+	cl_uint sizeThing = 300;
+	err = clSetKernelArg(computeKernel, 4, sizeof(cl_uint), &sizeThing);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Couldn't set the windowWidth inside of the kernel." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
+	err = clSetKernelArg(computeKernel, 5, sizeof(cl_uint), &sizeThing);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "Couldn't set the windowHeight inside of the kernel." << debuglogger::endl;
+		return EXIT_FAILURE;
+	}
 
 
 	err = clGetKernelWorkGroupInfo(computeKernel, computeDeviceID, CL_KERNEL_WORK_GROUP_SIZE, sizeof(workGroupSize), &workGroupSize, nullptr);
@@ -403,6 +417,8 @@ void graphicsLoop(HWND hWnd) {
 			debuglogger::out << debuglogger::error << "failed to wait for compute kernel to finish" << debuglogger::endl;
 			// TODO: Find a way to exit program from here.
 		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
 		if (state) {
 			err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &fieldVels_computeImage);
