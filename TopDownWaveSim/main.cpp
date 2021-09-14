@@ -388,7 +388,7 @@ void graphicsLoop(HWND hWnd) {
 			mouseX = -1;
 		}
 
-		size_t globalSize[2] = { 512, windowHeight };
+		size_t globalSize[2] = { workGroupSize * 2, windowHeight };
 		size_t localSize[2] = { workGroupSize, 1 };
 		err = clEnqueueNDRangeKernel(computeCommandQueue, computeKernel, 2, nullptr, globalSize, localSize, 0, nullptr, nullptr);
 		if (err != CL_SUCCESS) {
@@ -461,7 +461,6 @@ void graphicsLoop(HWND hWnd) {
 				fieldVels[i] -= THING_STRENGTH;
 			}
 		}*/
-
 		float* endFieldValues = new float[FIELD_SIZE];
 		if (state) {
 			size_t origin[3] = { 0, 0, 0 };
