@@ -14,8 +14,8 @@
 
 #define FIELD_PULL 0.01f																											// The strength with which points on the field are forced to return to their origin.
 
-#define WINDOW_STARTING_WIDTH 300
-#define WINDOW_STARTING_HEIGHT 300
+#define WINDOW_STARTING_WIDTH 1000
+#define WINDOW_STARTING_HEIGHT 1000
 
 int windowWidth = WINDOW_STARTING_WIDTH;
 int windowHeight = WINDOW_STARTING_HEIGHT;
@@ -223,28 +223,28 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 		return EXIT_FAILURE;
 	}
 
-	err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &lastFieldVels_computeImage);
+	err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &lastFieldValues_computeImage);
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "Couldn't set the lastFieldVels argument in kernel." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
-	err = clSetKernelArg(computeKernel, 1, sizeof(cl_mem), &fieldVels_computeImage);
+	err = clSetKernelArg(computeKernel, 1, sizeof(cl_mem), &lastFieldVels_computeImage);
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "Couldn't set the fieldVels argument in kernel." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
-	err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &lastFieldValues_computeImage);
+	err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &fieldValues_computeImage);
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "Couldn't set the lastFieldValues argument in kernel." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
-	err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &fieldValues_computeImage);
+	err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &fieldVels_computeImage);
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "Couldn't set the fieldValues argument in kernel." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
 	
-	cl_uint sizeThing = 300;
+	cl_uint sizeThing = WINDOW_STARTING_WIDTH;
 	err = clSetKernelArg(computeKernel, 4, sizeof(cl_uint), &sizeThing);
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "Couldn't set the windowWidth inside of the kernel." << debuglogger::endl;
@@ -402,7 +402,7 @@ void graphicsLoop(HWND hWnd) {
 			mouseX = -1;
 		}
 
-		size_t globalSize[2] = { workGroupSize * 2, windowHeight };
+		size_t globalSize[2] = { windowWidth + 24, windowHeight };
 		size_t localSize[2] = { workGroupSize, 1 };
 		err = clEnqueueNDRangeKernel(computeCommandQueue, computeKernel, 2, nullptr, globalSize, localSize, 0, nullptr, nullptr);
 		if (err != CL_SUCCESS) {
@@ -418,32 +418,8 @@ void graphicsLoop(HWND hWnd) {
 			// TODO: Find a way to exit program from here.
 		}
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
 		if (state) {
-			err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &fieldVels_computeImage);
-			if (err != CL_SUCCESS) {
-				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
-				// TODO: Implement exit strat here.
-			}
-			err = clSetKernelArg(computeKernel, 1, sizeof(cl_mem), &lastFieldVels_computeImage);
-			if (err != CL_SUCCESS) {
-				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
-				// TODO: Implement exit strat here.
-			}
-			err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &fieldValues_computeImage);
-			if (err != CL_SUCCESS) {
-				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
-				// TODO: Implement exit strat here.
-			}
-			err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &lastFieldValues_computeImage);
-			if (err != CL_SUCCESS) {
-				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
-				// TODO: Implement exit strat here.
-			}
-		}
-		else {
-			err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &lastFieldVels_computeImage);
+			err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &fieldValues_computeImage);
 			if (err != CL_SUCCESS) {
 				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
 				// TODO: Implement exit strat here.
@@ -458,7 +434,29 @@ void graphicsLoop(HWND hWnd) {
 				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
 				// TODO: Implement exit strat here.
 			}
-			err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &fieldValues_computeImage);
+			err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &lastFieldVels_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+		}
+		else {
+			err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &lastFieldValues_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+			err = clSetKernelArg(computeKernel, 1, sizeof(cl_mem), &lastFieldVels_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+			err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &fieldValues_computeImage);
+			if (err != CL_SUCCESS) {
+				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
+				// TODO: Implement exit strat here.
+			}
+			err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &fieldVels_computeImage);
 			if (err != CL_SUCCESS) {
 				debuglogger::out << debuglogger::error << "failed while swapping GPU buffers" << debuglogger::endl;
 				// TODO: Implement exit strat here.
