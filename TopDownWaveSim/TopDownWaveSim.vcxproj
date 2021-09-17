@@ -145,11 +145,11 @@
   <ItemGroup>
     <ClCompile Include="debugOutput.cpp" />
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="selectOpenCLBindings.cpp" />
+    <ClCompile Include="OpenCLBindingsAndHelpers.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="debugOutput.h" />
-    <ClInclude Include="selectOpenCLBindings.h" />
+    <ClInclude Include="OpenCLBindingsAndHelpers.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="wavePropagator.cl" />

@@ -18,18 +18,18 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="selectOpenCLBindings.cpp">
+    <ClCompile Include="debugOutput.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="debugOutput.cpp">
+    <ClCompile Include="OpenCLBindingsAndHelpers.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="selectOpenCLBindings.h">
+    <ClInclude Include="debugOutput.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="debugOutput.h">
+    <ClInclude Include="OpenCLBindingsAndHelpers.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

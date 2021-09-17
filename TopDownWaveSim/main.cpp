@@ -2,7 +2,7 @@
 #include <Windows.h>
 #include <windowsx.h>																												// Extentions to the main Windows.h header. I only have this in here for the GET_X_LPARAM and GET_Y_LPARAM macros in the message handler.
 
-#include "selectOpenCLBindings.h"
+#include "OpenCLBindingsAndHelpers.h"
 
 #include <iostream>
 #include <fstream>
@@ -106,7 +106,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	debuglogger::out << "Using one of the possible platforms." << debuglogger::endl;
 
 	size_t versionTextSize;
-	err = clGetPlatformInfo(computePlatformID, CL_PLATFORM_VERSION, 0, NULL, &versionTextSize);
+	err = clGetPlatformInfo(computePlatformID,CL_PLATFORM_VERSION, 0, NULL, &versionTextSize);
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "Couldn't get platform version text size." << debuglogger::endl;
 		return EXIT_FAILURE;

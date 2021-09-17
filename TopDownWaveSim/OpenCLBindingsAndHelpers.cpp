@@ -1,16 +1,16 @@
-#include "selectOpenCLBindings.h"
+#include "OpenCLBindingsAndHelpers.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-#define CHECK_FUNC_VALIDITY(func) if (!(func)) { return false; }
+#define CHECK_FUNC_VALIDITY(func) if (!(func)) { return false; }																						// Simple helper define that reports error (returns false) if one of the functions doesn't bind correctly.
 
 bool initOpenCLBindings() {
-	HINSTANCE DLLProcID = LoadLibraryA("OpenCL.dll");
-	if (!DLLProcID) { return false; }
+	HINSTANCE DLLProcID = LoadLibraryA("OpenCL.dll");																									// Load the OpenCL DLL.
+	if (!DLLProcID) { return false; }																													// If it doesn't load correctly, fail.
 
-	CHECK_FUNC_VALIDITY(clGetPlatformIDs = (clGetPlatformIDs_func)GetProcAddress(DLLProcID, "clGetPlatformIDs"));
-	CHECK_FUNC_VALIDITY(clGetPlatformInfo = (clGetPlatformInfo_func)GetProcAddress(DLLProcID, "clGetPlatformInfo"));
+	CHECK_FUNC_VALIDITY(clGetPlatformIDs = (clGetPlatformIDs_func)GetProcAddress(DLLProcID, "clGetPlatformIDs"));										// Go through all of the various functions and bind them (get function pointers to them and store those pointers in variables).
+	CHECK_FUNC_VALIDITY(clGetPlatformInfo = (clGetPlatformInfo_func)GetProcAddress(DLLProcID, "clGetPlatformInfo"));									// If any one of these binds fails, everything stops and the whole functions fails.
 	CHECK_FUNC_VALIDITY(clGetDeviceIDs = (clGetDeviceIDs_func)GetProcAddress(DLLProcID, "clGetDeviceIDs"));
 	CHECK_FUNC_VALIDITY(clCreateContext = (clCreateContext_func)GetProcAddress(DLLProcID, "clCreateContext"));
 	CHECK_FUNC_VALIDITY(clCreateCommandQueue = (clCreateCommandQueue_func)GetProcAddress(DLLProcID, "clCreateCommandQueue"));

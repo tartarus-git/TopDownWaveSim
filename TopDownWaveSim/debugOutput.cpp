@@ -1,12 +1,12 @@
-#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS																						// Disables warnings for functions that are deemed insecure by the standard. It's only for _itoa, which I am using safely, so I can turn of the warnings.
 
 #include "debugOutput.h"
 
-#define WIN32_LEAN_AND_MEAN									// TODO: Make sure to read the docs for OutputDebugStringA again and make sure that we're doing it right here.
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
 #include <cstdint>
-#include <stdlib.h>
+#include <stdlib.h>																									// This is included because we need access to _itoa.
 
 DebugOutput& DebugOutput::operator<<(const char* input) {
 	OutputDebugStringA(input);
@@ -19,10 +19,11 @@ DebugOutput& DebugOutput::operator<<(char* input) {
 }
 
 DebugOutput& DebugOutput::operator<<(char input) {
-	char buffer[] { input, '\0' };								// TODO: Make sure this is just as efficient as initializing them normally.
+	char buffer[] = { input, '\0' };																				// List initialization of basic types is apparently just as efficient as doing it per hand, contrary to custom types and such. Use equal sign because that makes it compatible with C.
 	OutputDebugStringA(buffer);
 	return *this;
 }
+
 
 DebugOutput& DebugOutput::operator<<(int32_t input) {
 	char buffer[12];
