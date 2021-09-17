@@ -44,6 +44,6 @@ __kernel void wavePropagator(__read_only image2d_t lastFieldValues, __read_only 
 		// (float4)(x, 0, 0, 0) would construct a temporary each time. Instead we make our own temporary and use it twice, better in theory.
 		float4 colorHull = (float4)(vel, 0, 0, 0);								// Velocity was already calculated so just put it in here.
 		write_imagef(fieldVels, coords, colorHull);
-		colorHull.x += prevPos;													// Add prevPos to vel, thereby calculating new position.
+		colorHull.x += prevValue;													// Add prevPos to vel, thereby calculating new position.
 		write_imagef(fieldValues, coords, colorHull);
 }
