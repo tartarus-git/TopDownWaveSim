@@ -6,6 +6,9 @@ __constant int influenceAreaX[] = { 1, -1,  0,  0,  1, -1,  1, -1,  0, -2,  2,  
 2, 2, -2, -2, 3, 3, 3, -3, -3, -3, 0, 1, -1, 0, 1, -1};
 __constant int influenceAreaY[] = { 0,  0, -1,  1, -1, -1,  1,  1, -2,  0,  0,  2, -2, -2, 2, 2, -1, 1, -1, 1, 
 2, -2, 2, -2, 0, 1, -1, 0, 1, -1, -3, -3, -3, 3, 3, 3};
+
+// TODO: Cache the distances in the source code in order to reduce computation.
+
 #define INFLUENCE_AREA_COUNT (sizeof(influenceAreaX) / sizeof(int))
 
 // Equalization function contains math for the equalization (nodes pulling each other together) of nodes.

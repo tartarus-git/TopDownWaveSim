@@ -23,6 +23,10 @@ int windowHeight = WINDOW_STARTING_HEIGHT;
 
 
 // TODO: Make sure you have enough delete[]'s and you dispose everything properly and stuff.
+// TODO: Make use of GPU asynchronous processing and do things while your kernel is running.
+// The same can maybe be made use of for reading and writing to/from buffer.
+
+// TODO: Include anti-aliasing somehow in the kernel source code in order to try to minimize artifacts. Make a seperate branch for that.
 
 
 
