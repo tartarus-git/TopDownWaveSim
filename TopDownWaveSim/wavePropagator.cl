@@ -1,13 +1,20 @@
 #define NODE_EQUALIZATION_STRENGTH 0.1f						// Strength with which nodes are pulled toward each other.
 #define FIELD_PULL 0.01f									// Strength at which nodes are pulled back to the field zero level.
 
-// Area that should be influenced through equalization. __constant instead of const because it is better optimized across all platforms.
-__constant int influenceAreaX[] = { 1, -1,  0,  0,  1, -1,  1, -1,  0, -2,  2,  0, -1, 1, -1, 1, 2, 2, -2, -2, 
-2, 2, -2, -2, 3, 3, 3, -3, -3, -3, 0, 1, -1, 0, 1, -1};
-__constant int influenceAreaY[] = { 0,  0, -1,  1, -1, -1,  1,  1, -2,  0,  0,  2, -2, -2, 2, 2, -1, 1, -1, 1, 
-2, -2, 2, -2, 0, 1, -1, 0, 1, -1, -3, -3, -3, 3, 3, 3};
+#define SQRT_2 1.41421356237f								// These defines optimize the kernel by storing precalculated square roots.
+#define SQRT_5 2.2360679775f								// These are used while handling the influence area.
+#define SQRT_8 2.82842712475f
+#define SQRT_10 3.16227766017f
 
-// TODO: Cache the distances in the source code in order to reduce computation.
+// Area that should be influenced through equalization. __constant instead of const because it is better optimized across all platforms.
+__constant int influenceAreaX[] = { 1, -1,  0,  0,  1, -1,  1, -1,  0, -2,  2,  0, -1,  1, -1,  1,  2,  2, -2, -2, 
+2,  2, -2, -2,  3,  3,  3, -3, -3, -3,  0,  1, -1,  0,  1, -1 };
+__constant int influenceAreaY[] = { 0,  0, -1,  1, -1, -1,  1,  1, -2,  0,  0,  2, -2, -2,  2,  2, -1,  1, -1,  1, 
+2, -2,  2, -2,  0,  1, -1,  0,  1, -1, -3, -3, -3,  3,  3,  3 };
+
+// Precalculated distances (square roots) are stored with as constants so the kernel can avoid unnecessary computation.
+__constant float influenceAreaDists[] = { 1, 1, 1, 1, SQRT_2, SQRT_2, SQRT_2, SQRT_2, 2, 2, 2, 2, SQRT_5, SQRT_5, SQRT_5, SQRT_5, SQRT_5, 
+SQRT_5, SQRT_5, SQRT_5, SQRT_8, SQRT_8, SQRT_8, SQRT_8, 3, SQRT_10, SQRT_10, 3, SQRT_10, SQRT_10, 3, SQRT_10, SQRT_10, 3, SQRT_10, SQRT_10 };
 
 #define INFLUENCE_AREA_COUNT (sizeof(influenceAreaX) / sizeof(int))
 
@@ -42,8 +49,7 @@ __kernel void wavePropagator(__read_only image2d_t lastFieldValues, __read_only 
 			if (absoluteY >= windowHeight || absoluteY < 0) { continue; }
 
 			// Pull this node towards equalization. Pass in values of the two nodes and distance between them.
-			vel -= equalize(prevValue, read_imagef(lastFieldValues, (int2)(absoluteX, absoluteY)).x, 
-					sqrt((float)(relativeX * relativeX + relativeY * relativeY)));
+			vel -= equalize(prevValue, read_imagef(lastFieldValues, (int2)(absoluteX, absoluteY)).x, influenceAreaDists[i]);
 		}
 
 		// (float4)(x, 0, 0, 0) would construct a temporary each time. Instead we make our own temporary and use it twice, better in theory.
