@@ -35,5 +35,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="wavePropagator.cl" />
+    <None Include="colorizer.cl" />
   </ItemGroup>
 </Project>

@@ -412,4 +412,4 @@ inline clEnqueueReadImage_func clEnqueueReadImage;
 // Simple helper function which initializes the dynamic linkage to the OpenCL DLL and initializes the bindings to all of the various functions.
 bool initOpenCLBindings();
 
-cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platform_id* bestPlatform, cl_device_id* bestDevice, cl_context* context, cl_command_queue* commandQueue);
+cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platform_id& bestPlatform, cl_device_id& bestDevice, cl_context& context, cl_command_queue& commandQueue);

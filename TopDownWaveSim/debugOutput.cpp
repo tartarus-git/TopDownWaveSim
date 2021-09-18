@@ -38,3 +38,6 @@ DebugOutput& DebugOutput::operator<<(uint32_t input) {
 	OutputDebugStringA(buffer);
 	return *this;
 }
+
+
+// TODO: Make the debug logging statements in all of the other code dissappear when building without debug.

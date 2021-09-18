@@ -29,7 +29,7 @@ bool initOpenCLBindings() {
 	CHECK_FUNC_VALIDITY(clEnqueueReadImage = (clEnqueueReadImage_func)GetProcAddress(DLLProcID, "clEnqueueReadImage"));
 }
 
-cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platform_id* bestPlatform, cl_device_id* bestDevice, cl_context* context, cl_command_queue* commandQueue) {
+cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platform_id& bestPlatform, cl_device_id& bestDevice, cl_context& context, cl_command_queue& commandQueue) {
 	// Find the best device on the system.
 
 	cl_uint platformCount;																																	// Get the amount of platforms that are available on the system.
@@ -78,7 +78,7 @@ cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platfor
 				if (deviceMaxWorkGroupSize > bestDeviceMaxWorkGroupSize) {																					// If current device is better than best device, set best device to current device.
 					bestDeviceMaxWorkGroupSize = deviceMaxWorkGroupSize;
 					cachedBestDevice = currentDevice;
-					if (bestPlatformInvalid) { *bestPlatform = currentPlatform; bestPlatformInvalid = false; }												// Only update the platform if the new best device is on a different platform than the previous best device. This saves us from dereferencing pointers frequently for high device counts.
+					if (bestPlatformInvalid) { bestPlatform = currentPlatform; bestPlatformInvalid = false; }												// Only update the platform if the new best device is on a different platform than the previous best device. This saves us from dereferencing pointers frequently for high device counts.
 				}
 			}
 			continue;
@@ -86,15 +86,19 @@ cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platfor
 		delete[] buffer;																																	// Still delete the buffer even if platform doesn't match the target version.
 	}
 	if (!bestDeviceMaxWorkGroupSize) { return CL_EXT_NO_DEVICES_FOUND; }																					// If no devices were found, stop executing and return an error.
-	*bestDevice = cachedBestDevice;																															// Update actual bestDevice using the cachedBestDevice variable.
+	bestDevice = cachedBestDevice;																															// Update actual bestDevice using the cachedBestDevice variable.
 
 	// Establish other needed vars using the best device on the system.
 
-	*context = clCreateContext(nullptr, 1, bestDevice, nullptr, nullptr, &err);																				// Create context using the best device.
+	context = clCreateContext(nullptr, 1, &bestDevice, nullptr, nullptr, &err);																				// Create context using the best device.
 	if (err != CL_SUCCESS) { return err; }
 
-	*commandQueue = clCreateCommandQueue(*context, cachedBestDevice, 0, &err);																				// Create command queue using the newly created context and the best device. Make use of cachedBestDevice, which is still equal to dereferenced bestDevice pointer.
+	commandQueue = clCreateCommandQueue(context, cachedBestDevice, 0, &err);																				// Create command queue using the newly created context and the best device. Make use of cachedBestDevice, which is still equal to dereferenced bestDevice pointer.
 	if (err != CL_SUCCESS) { return err; }
 
 	return CL_SUCCESS;																																		// If no error occurred up until this point, return CL_SUCCESS.
 }
+
+
+// TODO: Update the comments to reflect that we're doing this with references now instead of with pointers.
+// Reason: The compiler might better be able to optimize if we use references. If the compiler inlines the function, the dereferencing problem completely goes away, but in case the compiler doesn't inline and uses pointers behind the scenes, we still use caching to make it efficient.

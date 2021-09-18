@@ -50,6 +50,8 @@ cl_mem lastFieldVels_computeImage;
 cl_mem fieldValues_computeImage;
 cl_mem fieldVels_computeImage;
 
+cl_mem frameOutput_computeImage;
+
 char* readFromSourceFile(const char* sourceFile) {
 	std::ifstream kernelSourceFile(sourceFile, std::ios::beg);																										// Open the source file.
 	if (!kernelSourceFile.is_open()) {
@@ -69,6 +71,73 @@ char* readFromSourceFile(const char* sourceFile) {
 	return kernelSource;																																			// This is theoretically dangerous because the calling code has to take care of deleting kernelSource. It's ok for this project.
 }
 
+bool setupComputeKernel(const char* sourceFile, const char* kernelName, cl_program& computeProgram, cl_kernel& computeKernel, size_t& computeKernelWorkGroupSize) {
+	cl_program cachedComputeProgram;
+	cl_kernel cachedComputeKernel;
+	size_t cachedKernelWorkGroupSize;
+
+	char* computeKernelSource = readFromSourceFile(sourceFile);																									// Read source code from file.
+	if (!computeKernelSource) {
+		debuglogger::out << debuglogger::error << "couldn't read compute program source code from file" << debuglogger::endl;
+		return true;
+	}
+	cl_int err;
+	cachedComputeProgram = clCreateProgramWithSource(computeContext, 1, (const char**)&computeKernelSource, nullptr, &err);														// Create compute program with the source code.
+	delete[] computeKernelSource;																																			// Delete kernelSource because readFromSourceFile returned a raw, unsafe pointer that we need to take care of.
+	if (!cachedComputeProgram) {
+		debuglogger::out << debuglogger::error << "failed to create compute program with source code" << debuglogger::endl;
+		return true;
+	}
+
+	err = clBuildProgram(cachedComputeProgram, 0, nullptr, nullptr, nullptr, nullptr);																					// Build compute program.
+	if (err != CL_SUCCESS) {																																		// If build fails, alert user and display build log.
+		debuglogger::out << debuglogger::error << "failed to build compute program" << debuglogger::endl;
+		size_t buildLogSize;
+		err = clGetProgramBuildInfo(cachedComputeProgram, computeDevice, CL_PROGRAM_BUILD_LOG, 0, nullptr, &buildLogSize);												// Get size of build log.
+		if (err != CL_SUCCESS) {
+			debuglogger::out << debuglogger::error << "could not get compute program build log size" << debuglogger::endl;
+			return true;
+		}
+		char* buffer = new char[buildLogSize];
+		err = clGetProgramBuildInfo(cachedComputeProgram, computeDevice, CL_PROGRAM_BUILD_LOG, buildLogSize, buffer, nullptr);											// Get actual build log.
+		if (err != CL_SUCCESS) {
+			delete[] buffer;
+			debuglogger::out << debuglogger::error << "could not retrieve compute program build log" << debuglogger::endl;
+			return true;
+		}
+		debuglogger::out << "BUILD LOG:" << debuglogger::endl << buffer << debuglogger::endl;
+		delete[] buffer;
+		return true;
+	}
+
+	cachedComputeKernel = clCreateKernel(cachedComputeProgram, kernelName, &err);																							// Create compute kernel using a specific kernel function in the compute program.
+	if (!cachedComputeKernel) {
+		debuglogger::out << debuglogger::error << "failed to create compute kernel" << debuglogger::endl;
+		return true;
+	}
+
+	err = clGetKernelWorkGroupInfo(cachedComputeKernel, computeDevice, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &cachedKernelWorkGroupSize, nullptr);						// Get kernel work group size.
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "couldn't get compute kernel work group size" << debuglogger::endl;
+		return true;
+	}
+
+	size_t computeKernelPreferredWorkGroupSizeMultiple;
+	err = clGetKernelWorkGroupInfo(cachedComputeKernel, computeDevice, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(size_t), &computeKernelPreferredWorkGroupSizeMultiple, nullptr);					// Get kernel preferred work group size multiple.
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "couldn't get preferred kernel work group size multiple for compute kernel" << debuglogger::endl;
+		return true;
+	}
+
+	if (cachedKernelWorkGroupSize > computeKernelPreferredWorkGroupSizeMultiple) { cachedKernelWorkGroupSize -= cachedKernelWorkGroupSize % computeKernelPreferredWorkGroupSizeMultiple; }										// Compute the optimal work group size for the kernel based on the raw kernel optimum and the kernel preferred work group size multiple.
+
+	computeProgram = cachedComputeProgram;
+	computeKernel = cachedComputeKernel;
+	computeKernelWorkGroupSize = cachedKernelWorkGroupSize;
+
+	return false;
+}
+
 // Sets up some of the OpenCL vars asynchronously while the main thread handles other things.
 bool OpenCLSetupFailure;
 void OpenCLSetup() {
@@ -78,97 +147,51 @@ void OpenCLSetup() {
 		return;
 	}
 
-	cl_int err = initOpenCLVarsForBestDevice("OpenCL 2.1 ", &computePlatform, &computeDevice, &computeContext, &computeCommandQueue);								// Initialize some necessary OpenCL vars. The space at the end of the version string is necessary.
+	cl_int err = initOpenCLVarsForBestDevice("OpenCL 2.1 ", computePlatform, computeDevice, computeContext, computeCommandQueue);								// Initialize some necessary OpenCL vars. The space at the end of the version string is necessary.
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "failed while initializing OpenCL vars for best device" << debuglogger::endl;
 		OpenCLSetupFailure = true;
 		return;
 	}
 
-	char* kernelSource = readFromSourceFile("wavePropagator.cl");																									// Read source code from file.
-	if (!kernelSource) {
-		debuglogger::out << debuglogger::error << "couldn't read compute program source code from file" << debuglogger::endl;
-		OpenCLSetupFailure = true;
-		return;
-	}
-	computeProgram = clCreateProgramWithSource(computeContext, 1, (const char**)&kernelSource, nullptr, &err);														// Create compute program with the source code.
-	delete[] kernelSource;																																			// Delete kernelSource because readFromSourceFile returned a raw, unsafe pointer that we need to take care of.
-	if (!computeProgram) {
-		debuglogger::out << debuglogger::error << "failed to create compute program with kernel source" << debuglogger::endl;
+	if (setupComputeKernel("wavePropagator.cl", "wavePropagator", computeWaveProgram, computeWaveKernel, computeWaveKernelWorkGroupSize)) {
+		debuglogger::out << debuglogger::error << "failed to set up wave propagator kernel" << debuglogger::endl;
 		OpenCLSetupFailure = true;
 		return;
 	}
 
-	err = clBuildProgram(computeProgram, 0, nullptr, nullptr, nullptr, nullptr);																					// Build compute program.
-	if (err != CL_SUCCESS) {																																		// If build fails, alert user and display build log.
-		debuglogger::out << debuglogger::error << "failed to build compute program" << debuglogger::endl;
-		size_t buildLogSize;
-		err = clGetProgramBuildInfo(computeProgram, computeDevice, CL_PROGRAM_BUILD_LOG, 0, nullptr, &buildLogSize);												// Get size of build log.
-		if (err != CL_SUCCESS) {
-			debuglogger::out << debuglogger::error << "could not get program build log size" << debuglogger::endl;
-			OpenCLSetupFailure = true;
-			return;
-		}
-		char* buffer = new char[buildLogSize];
-		err = clGetProgramBuildInfo(computeProgram, computeDevice, CL_PROGRAM_BUILD_LOG, buildLogSize, buffer, nullptr);											// Get actual build log.
-		if (err != CL_SUCCESS) {
-			delete[] buffer;
-			debuglogger::out << debuglogger::error << "could not retrieve program build log" << debuglogger::endl;
-			OpenCLSetupFailure = true;
-			return;
-		}
-		debuglogger::out << "BUILD LOG:" << debuglogger::endl << buffer << debuglogger::endl;
-		delete[] buffer;
+	if (setupComputeKernel("colorizer.cl", "colorizer", computeColorizerProgram, computeColorizerKernel, computeColorizerKernelWorkGroupSize)) {
+		debuglogger::out << debuglogger::error << "failed to set up colorizer kernel" << debuglogger::endl;
 		OpenCLSetupFailure = true;
 		return;
 	}
-
-	computeKernel = clCreateKernel(computeProgram, "wavePropagator", &err);																							// Create compute kernel using a specific kernel function in the compute program.
-	if (!computeKernel) {
-		debuglogger::out << debuglogger::error << "failed to create kernel" << debuglogger::endl;
-		OpenCLSetupFailure = true;
-		return;
-	}
-
-	err = clGetKernelWorkGroupInfo(computeKernel, computeDevice, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &computeWorkGroupSize, nullptr);						// Get kernel work group size.
-	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't get kernel work group size" << debuglogger::endl;
-		OpenCLSetupFailure = true;
-		return;
-	}
-
-	size_t computePreferredWorkGroupSizeMultiple;
-	err = clGetKernelWorkGroupInfo(computeKernel, computeDevice, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(size_t), &computePreferredWorkGroupSizeMultiple, nullptr);					// Get kernel preferred work group size multiple.
-	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't get preferred kernel work group size multiple" << debuglogger::endl;
-		OpenCLSetupFailure = true;
-		return;
-	}
-
-	if (computeWorkGroupSize > computePreferredWorkGroupSizeMultiple) { computeWorkGroupSize -= computeWorkGroupSize % computePreferredWorkGroupSizeMultiple; }										// Compute the optimal work group size for the kernel based on the raw kernel optimum and the kernel preferred work group size multiple.
-
-	OpenCLSetupFailure = false;																																		// If no error has happened up until this point, set OpenCLSetupFailure to false.
 }
 
 bool setDefaultKernelImageArguments() {
-	cl_int err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &lastFieldValues_computeImage);
+	cl_int err = clSetKernelArg(computeWaveKernel, 0, sizeof(cl_mem), &lastFieldValues_computeImage);
 	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't set lastFieldValues argument in kernel" << debuglogger::endl;
+		debuglogger::out << debuglogger::error << "couldn't set lastFieldValues argument in wave kernel" << debuglogger::endl;
 		return true;
 	}
-	err = clSetKernelArg(computeKernel, 1, sizeof(cl_mem), &lastFieldVels_computeImage);
+	err = clSetKernelArg(computeWaveKernel, 1, sizeof(cl_mem), &lastFieldVels_computeImage);
 	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't set lastFieldVels argument in kernel" << debuglogger::endl;
+		debuglogger::out << debuglogger::error << "couldn't set lastFieldVels argument in wave kernel" << debuglogger::endl;
 		return true;
 	}
-	err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &fieldValues_computeImage);
+	err = clSetKernelArg(computeWaveKernel, 2, sizeof(cl_mem), &fieldValues_computeImage);
 	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't set fieldValues argument in kernel" << debuglogger::endl;
+		debuglogger::out << debuglogger::error << "couldn't set fieldValues argument in wave kernel" << debuglogger::endl;
 		return true;
 	}
-	err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &fieldVels_computeImage);
+	err = clSetKernelArg(computeWaveKernel, 3, sizeof(cl_mem), &fieldVels_computeImage);
 	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't set fieldVels argument in kernel" << debuglogger::endl;
+		debuglogger::out << debuglogger::error << "couldn't set fieldVels argument in wave kernel" << debuglogger::endl;
+		return true;
+	}
+
+	err = clSetKernelArg(computeColorizerKernel, 0, sizeof(cl_mem), &fieldValues_computeImage);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "couldn't set fieldValues argument in colorizer kernel" << debuglogger::endl;
 		return true;
 	}
 
@@ -183,6 +206,7 @@ cl_uint windowHeight;
 
 // Global const which defines the image format that is to be used for compute images.
 const cl_image_format computeImageFormat = { CL_R, CL_FLOAT };
+const cl_image_format computeFrameFormat = { CL_RGBA, CL_UNSIGNED_INT8 };
 
 bool createComputeImages() {
 	size_t windowArea = windowWidth * windowHeight;																																					// Create an array of floats and zero them out. This memory will be copied to compute device so compute buffers are zeroed out.
@@ -219,13 +243,36 @@ bool createComputeImages() {
 		return true;
 	}
 
-	return setDefaultKernelImageArguments();
+
+
+	frameOutput_computeImage = clCreateImage2D(computeContext, CL_MEM_WRITE_ONLY, &computeFrameFormat, windowWidth, windowHeight, 0, nullptr, &err);
+	if (!frameOutput_computeImage) {
+		debuglogger::out << debuglogger::error << "failed to create frameOutput compute image" << debuglogger::endl;
+		return true;
+	}
+
+
+	if (setDefaultKernelImageArguments()) { return true; }
+
+	
+	err = clSetKernelArg(computeColorizerKernel, 1, sizeof(cl_mem), &frameOutput_computeImage);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "couldn't set frameOutput argument in colorizer kernel" << debuglogger::endl;
+		return true;
+	}
+
+	return false;
 }
 
 bool setKernelWindowSizeArguments() {
-	cl_int err = clSetKernelArg(computeKernel, 4, sizeof(cl_uint), &windowWidth);
+	cl_int err = clSetKernelArg(computeWaveKernel, 4, sizeof(cl_uint), &windowWidth);
 	if (err != CL_SUCCESS) { return true; }
-	err = clSetKernelArg(computeKernel, 5, sizeof(cl_uint), &windowHeight);
+	err = clSetKernelArg(computeWaveKernel, 5, sizeof(cl_uint), &windowHeight);
+	if (err != CL_SUCCESS) { return true; }
+
+	err = clSetKernelArg(computeColorizerKernel, 2, sizeof(cl_uint), &windowWidth);
+	if (err != CL_SUCCESS) { return true; }
+	err = clSetKernelArg(computeColorizerKernel, 3, sizeof(cl_uint), &windowHeight);
 	if (err != CL_SUCCESS) { return true; }
 
 	return false;
@@ -349,26 +396,33 @@ bool handleMouseClick() {
 bool swapKernelImageArguments() {
 	if (swapState) { return setDefaultKernelImageArguments(); }
 
-	cl_int err = clSetKernelArg(computeKernel, 0, sizeof(cl_mem), &fieldValues_computeImage);
+	cl_int err = clSetKernelArg(computeWaveKernel, 0, sizeof(cl_mem), &fieldValues_computeImage);
 	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't set fieldValues argument in kernel" << debuglogger::endl;
+		debuglogger::out << debuglogger::error << "couldn't set fieldValues argument in colorizer kernel" << debuglogger::endl;
 		return true;
 	}
-	err = clSetKernelArg(computeKernel, 1, sizeof(cl_mem), &fieldVels_computeImage);
+	err = clSetKernelArg(computeWaveKernel, 1, sizeof(cl_mem), &fieldVels_computeImage);
 	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't set fieldVels argument in kernel" << debuglogger::endl;
+		debuglogger::out << debuglogger::error << "couldn't set fieldVels argument in colorizer kernel" << debuglogger::endl;
 		return true;
 	}
-	err = clSetKernelArg(computeKernel, 2, sizeof(cl_mem), &lastFieldValues_computeImage);
+	err = clSetKernelArg(computeWaveKernel, 2, sizeof(cl_mem), &lastFieldValues_computeImage);
 	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't set lastFieldValues argument in kernel" << debuglogger::endl;
+		debuglogger::out << debuglogger::error << "couldn't set lastFieldValues argument in colorizer kernel" << debuglogger::endl;
 		return true;
 	}
-	err = clSetKernelArg(computeKernel, 3, sizeof(cl_mem), &lastFieldVels_computeImage);
+	err = clSetKernelArg(computeWaveKernel, 3, sizeof(cl_mem), &lastFieldVels_computeImage);
 	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't set lastFieldVels argument in kernel" << debuglogger::endl;
+		debuglogger::out << debuglogger::error << "couldn't set lastFieldVels argument in wave kernel" << debuglogger::endl;
 		return true;
 	}
+
+	
+	err = clSetKernelArg(computeColorizerKernel, 0, sizeof(cl_mem), &lastFieldValues_computeImage);
+	if (err != CL_SUCCESS) {
+		debuglogger::out << debuglogger::error << "couldn't set lastFieldValues argument in colorizer kernel" << debuglogger::endl;
+	}
+
 
 	swapState = true;
 
@@ -398,12 +452,18 @@ void graphicsLoop(HWND hWnd) {
 			mouseClicked = false;
 		}
 
-		size_t globalSize[2] = { windowWidth + (computeWorkGroupSize - (windowWidth % computeWorkGroupSize)), windowHeight };
-		size_t localSize[2] = { computeWorkGroupSize, 1 };
-		err = clEnqueueNDRangeKernel(computeCommandQueue, computeKernel, 2, nullptr, globalSize, localSize, 0, nullptr, nullptr);
+		size_t globalSize[2] = { windowWidth + (computeWaveKernelWorkGroupSize - (windowWidth % computeWaveKernelWorkGroupSize)), windowHeight };// TODO: In order to add antialiasing, you need multiply the actual fields by 4 and have the frameoutput match the window size.
+																																				// TODO: How are you going to generate waves if every pixel is actually 4? 4 pixels at a time? will that cause interference?
+		size_t localSize[2] = { computeWaveKernelWorkGroupSize, 1 };
+		err = clEnqueueNDRangeKernel(computeCommandQueue, computeWaveKernel, 2, nullptr, globalSize, localSize, 0, nullptr, nullptr);
 		if (err != CL_SUCCESS) {
 			debuglogger::out << debuglogger::error << "failed to enqueue kernel" << debuglogger::endl;
 			// TODO: Implement some way of exiting from inside the graphics thread loop.
+		}
+
+		err = clEnqueueNDRangeKernel(computeCommandQueue, computeColorizerKernel, 2, nullptr, globalSize, localSize, 0, nullptr, nullptr);
+		if (err != CL_SUCCESS) {
+			debuglogger::out << debuglogger::error << "failed to enqueue colorizer kernel" << debuglogger::endl;
 		}
 
 		err = clFinish(computeCommandQueue);
@@ -414,6 +474,13 @@ void graphicsLoop(HWND hWnd) {
 
 		if (swapKernelImageArguments()) {
 			debuglogger::out << debuglogger::error << "failed to swap kernel image arguments" << debuglogger::endl;
+		}
+
+		size_t origin[3] = { 0, 0, 0 };
+		size_t region[3] = { windowWidth, windowHeight, 1 };
+		err = clEnqueueReadImage(computeCommandQueue, frameOutput_computeImage, true, (const size_t*)&origin, (const size_t*)&region, 0, 0, frame, 0, nullptr, nullptr);
+		if (err != CL_SUCCESS) {
+			debuglogger::out << debuglogger::error << "couldn't read frame output from compute device" << debuglogger::endl;
 		}
 
 		SetBitmapBits(bmp, FRAME_SIZE, frame);																				// Copy the current frame data into the bitmap, so that it is displayed on the window.
