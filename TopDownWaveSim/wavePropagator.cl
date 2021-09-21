@@ -26,10 +26,10 @@ float equalize(float thisValue, float otherValue, float dist) {
 // Main kernel takes more parameters than theoretically necessary because of the read and write limitations of OpenCL.
 __kernel void wavePropagator(__read_only image2d_t lastFieldValues, __read_only image2d_t lastFieldVels, 
 							 __write_only image2d_t fieldValues,	__write_only image2d_t fieldVels, 
-							 unsigned int windowWidth, 				unsigned int windowHeight) {
+							 unsigned int fieldWidth, 				unsigned int fieldHeight) {
 
 		int x = get_global_id(0);												// Get this work-item's coords and exit early if out of bounds.
-		if (x >= windowWidth) { return; }										// Reason for extra instances of kernel: global size must be
+		if (x >= fieldWidth) { return; }										// Reason for extra instances of kernel: global size must be
 		int2 coords = (int2)(x, get_global_id(1));								// multiple of work group size.
 		
 		float prevValue = read_imagef(lastFieldValues, coords).x;				// Get the previous value and velocity at current position.
@@ -43,10 +43,10 @@ __kernel void wavePropagator(__read_only image2d_t lastFieldValues, __read_only 
 		for (int i = 0; i < INFLUENCE_AREA_COUNT; i++) {						// Calculate equalization for all nodes in influence area.
 			int relativeX = influenceAreaX[i];									// Check if the node in question is out of bounds.
 			int absoluteX = coords.x + relativeX;
-			if (absoluteX >= windowWidth || absoluteX < 0) { continue; }
+			if (absoluteX >= fieldWidth || absoluteX < 0) { continue; }
 			int relativeY = influenceAreaY[i];
 			int absoluteY = coords.y + relativeY;
-			if (absoluteY >= windowHeight || absoluteY < 0) { continue; }
+			if (absoluteY >= fieldHeight || absoluteY < 0) { continue; }
 
 			// Pull this node towards equalization. Pass in values of the two nodes and distance between them.
 			vel -= equalize(prevValue, read_imagef(lastFieldValues, (int2)(absoluteX, absoluteY)).x, influenceAreaDists[i]);

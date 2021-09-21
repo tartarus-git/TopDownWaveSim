@@ -3,6 +3,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
+#include <iostream>																																			// Include these two headers for reading from program source files.
+#include <fstream>
+
 #define CHECK_FUNC_VALIDITY(func) if (!(func)) { return false; }																							// Simple helper define that reports error (returns false) if one of the functions doesn't bind correctly.
 
 bool initOpenCLBindings() {
@@ -43,7 +46,7 @@ cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platfor
 
 	bool bestPlatformInvalid;																																// Simple algorithm to go through each platform that matches the target version and select the best device out of all possibilities across all platforms.
 	size_t bestDeviceMaxWorkGroupSize = 0;
-	cl_device_id cachedBestDevice;																															// We cache the best device in this local variable to avoid unnecessarily dereferencing the bestDevice pointer.
+	cl_device_id cachedBestDevice;																															// We cache the best device in this local variable to avoid unnecessarily dereferencing the bestDevice if compiler turns it into pointer.
 	for (int i = 0; i < platformCount; i++) {
 		cl_platform_id currentPlatform = platforms[i];																										// This is probably done automatically by the compiler, but I like having it here. Makes accessing the platform easier because you don't have to use an add instruction.
 
@@ -78,8 +81,8 @@ cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platfor
 				if (deviceMaxWorkGroupSize > bestDeviceMaxWorkGroupSize) {																					// If current device is better than best device, set best device to current device.
 					bestDeviceMaxWorkGroupSize = deviceMaxWorkGroupSize;
 					cachedBestDevice = currentDevice;
-					if (bestPlatformInvalid) { bestPlatform = currentPlatform; bestPlatformInvalid = false; }												// Only update the platform if the new best device is on a different platform than the previous best device. This saves us from dereferencing pointers frequently for high device counts.
-				}
+					if (bestPlatformInvalid) { bestPlatform = currentPlatform; bestPlatformInvalid = false; }												// Only update the platform if the new best device is on a different platform than the previous best device. Prevents dereferencing (possible) pointers frequently for high device counts.
+				}																																			// The reason we don't cache bestPlatform is because it probably won't be more efficient.
 			}
 			continue;
 		}
@@ -90,15 +93,72 @@ cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platfor
 
 	// Establish other needed vars using the best device on the system.
 
-	context = clCreateContext(nullptr, 1, &bestDevice, nullptr, nullptr, &err);																				// Create context using the best device.
+	context = clCreateContext(nullptr, 1, &bestDevice, nullptr, nullptr, &err);																				// Create context using the best device. Compiler will hopefully optimize the & in case of reference being treated as pointer.
 	if (err != CL_SUCCESS) { return err; }
 
-	commandQueue = clCreateCommandQueue(context, cachedBestDevice, 0, &err);																				// Create command queue using the newly created context and the best device. Make use of cachedBestDevice, which is still equal to dereferenced bestDevice pointer.
+	commandQueue = clCreateCommandQueue(context, cachedBestDevice, 0, &err);																				// Create command queue using the newly created context and the best device. Using cachedBestDevice in case references are pointers.
 	if (err != CL_SUCCESS) { return err; }
 
 	return CL_SUCCESS;																																		// If no error occurred up until this point, return CL_SUCCESS.
 }
 
+char* readFromSourceFile(const char* sourceFile) {
+	std::ifstream kernelSourceFile(sourceFile, std::ios::beg);																								// Open the source file.
+	if (!kernelSourceFile.is_open()) { return nullptr; }
+#pragma push_macro(max)																																		// Count the characters inside the source file, construct large enough buffer, read from file into buffer.
+#undef max																																					// The reason for this push, pop and undef stuff is because max is a macro defined in Windows.h header and it interferes with our code.
+	kernelSourceFile.ignore(std::numeric_limits<std::streamsize>::max());																					// We shortly undefine it and then pop it's original definition back into the empty slot when we're done with our code.
+#pragma pop_macro(max)
+	std::streamsize kernelSourceSize = kernelSourceFile.gcount();
+	char* kernelSource = new char[kernelSourceSize + 1];
+	kernelSourceFile.seekg(0, std::ios::beg);
+	kernelSourceFile.read(kernelSource, kernelSourceSize);
+	kernelSourceFile.close();
+	kernelSource[kernelSourceSize] = '\0';
+	return kernelSource;																																	// Returning a raw heap-initialized char array is potentially dangerous. The caller must delete the array.
+}
 
-// TODO: Update the comments to reflect that we're doing this with references now instead of with pointers.
-// Reason: The compiler might better be able to optimize if we use references. If the compiler inlines the function, the dereferencing problem completely goes away, but in case the compiler doesn't inline and uses pointers behind the scenes, we still use caching to make it efficient.
+cl_int setupComputeKernel(cl_context context, cl_device_id device, const char* sourceFile, const char* kernelName, cl_program& program, cl_kernel& kernel, size_t& kernelWorkGroupSize, char*& buildLog) {
+	cl_program cachedProgram;																																// We cache the values in case the compiler resorts to pointers instead of references. In that case, caching will be more efficient.
+	cl_kernel cachedKernel;
+	size_t cachedKernelWorkGroupSize;
+
+	char* kernelSource = readFromSourceFile(sourceFile);																									// Read source code from file.
+	if (!kernelSource) { return CL_EXT_FAILED_TO_READ_SOURCE_FILE; }
+	cl_int err;
+	cachedProgram = clCreateProgramWithSource(context, 1, (const char**)&kernelSource, nullptr, &err);														// Create program with the source code.
+	delete[] kernelSource;																																	// Delete kernelSource because readFromSourceFile returned a raw, unsafe pointer that we need to take care of.
+	if (!cachedProgram) { return err; }
+
+	err = clBuildProgram(cachedProgram, 0, nullptr, nullptr, nullptr, nullptr);																				// Build program.
+	if (err != CL_SUCCESS) {																																// If build fails, return try to return the build log to the user.
+		size_t buildLogSize;
+		err = clGetProgramBuildInfo(cachedProgram, device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &buildLogSize);												// Get size of build log.
+		if (err != CL_SUCCESS) { return err; }
+		buildLog = new char[buildLogSize];																													// Allocate some memory using the reference to the buildLog pointer.
+		err = clGetProgramBuildInfo(cachedProgram, device, CL_PROGRAM_BUILD_LOG, buildLogSize, buildLog, nullptr);											// Get actual build log.
+		if (err != CL_SUCCESS) {
+			delete[] buildLog;
+			return err;
+		}																																					// Don't delete build log if it is to be returned to caller because caller needs to use it. The caller is responsible for deleting it.
+		return CL_EXT_BUILD_FAILED_WITH_BUILD_LOG;
+	}
+
+	cachedKernel = clCreateKernel(cachedProgram, kernelName, &err);																							// Create kernel using a specific kernel function in the program.
+	if (!cachedKernel) { return err; }
+
+	err = clGetKernelWorkGroupInfo(cachedKernel, device, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &cachedKernelWorkGroupSize, nullptr);					// Get kernel work group size.
+	if (err != CL_SUCCESS) { return err; }
+
+	size_t computeKernelPreferredWorkGroupSizeMultiple;
+	err = clGetKernelWorkGroupInfo(cachedKernel, device, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(size_t), &computeKernelPreferredWorkGroupSizeMultiple, nullptr);					// Get kernel preferred work group size multiple.
+	if (err != CL_SUCCESS) { return err; }
+
+	if (cachedKernelWorkGroupSize > computeKernelPreferredWorkGroupSizeMultiple) { cachedKernelWorkGroupSize -= cachedKernelWorkGroupSize % computeKernelPreferredWorkGroupSizeMultiple; }		// Compute optimal work group size for kernel based on the raw kernel optimum and kernel preferred work group size multiple.
+
+	program = cachedProgram;																																// Update actual values with the cached values.
+	kernel = cachedKernel;
+	kernelWorkGroupSize = cachedKernelWorkGroupSize;
+
+	return CL_SUCCESS;																																		// Return CL_SUCCESS if we make to this point.
+}

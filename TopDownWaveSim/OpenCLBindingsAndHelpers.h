@@ -89,6 +89,9 @@
 #define CL_EXT_NO_DEVICES_FOUND_ON_PLATFORM			  2
 #define CL_EXT_NO_DEVICES_FOUND						  3
 
+#define CL_EXT_FAILED_TO_READ_SOURCE_FILE			  4
+#define CL_EXT_BUILD_FAILED_WITH_BUILD_LOG			  5
+
 /* cl_platoform_info */
 #define CL_PLATFORM_PROFILE                         0x0900											// Different types of platform info to query using clGetPlatformInfo.
 #define CL_PLATFORM_VERSION                         0x0901
@@ -413,3 +416,7 @@ inline clEnqueueReadImage_func clEnqueueReadImage;
 bool initOpenCLBindings();
 
 cl_int initOpenCLVarsForBestDevice(const char* targetPlatformVersion, cl_platform_id& bestPlatform, cl_device_id& bestDevice, cl_context& context, cl_command_queue& commandQueue);
+
+char* readFromSourceFile(const char* sourceFile);
+
+cl_int setupComputeKernel(cl_context context, cl_device_id device, const char* sourceFile, const char* kernelName, cl_program& program, cl_kernel& kernel, size_t& kernelWorkGroupSize, char*& buildLog);

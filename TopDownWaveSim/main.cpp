@@ -52,91 +52,7 @@ cl_mem fieldVels_computeImage;
 
 cl_mem frameOutput_computeImage;
 
-char* readFromSourceFile(const char* sourceFile) {
-	std::ifstream kernelSourceFile(sourceFile, std::ios::beg);																										// Open the source file.
-	if (!kernelSourceFile.is_open()) {
-		debuglogger::out << debuglogger::error << "couldn't open kernel source file" << debuglogger::endl;
-		return nullptr;
-	}
-#pragma push_macro(max)																																				// Count the characters inside the source file, construct large enough buffer, read from file into buffer.
-#undef max																																							// The reason for this push, pop and undef stuff is because max is a macro defined in one of the windows headers and it interferes with our code.
-	kernelSourceFile.ignore(std::numeric_limits<std::streamsize>::max());																							// We shortly undefine it and then pop it's original definition back into the empty slot when we're done with our code.
-#pragma pop_macro(max)
-	std::streamsize kernelSourceSize = kernelSourceFile.gcount();
-	char* kernelSource = new char[kernelSourceSize + 1];
-	kernelSourceFile.seekg(0, std::ios::beg);
-	kernelSourceFile.read(kernelSource, kernelSourceSize);
-	kernelSourceFile.close();
-	kernelSource[kernelSourceSize] = '\0';
-	return kernelSource;																																			// This is theoretically dangerous because the calling code has to take care of deleting kernelSource. It's ok for this project.
-}
 
-bool setupComputeKernel(const char* sourceFile, const char* kernelName, cl_program& computeProgram, cl_kernel& computeKernel, size_t& computeKernelWorkGroupSize) {
-	cl_program cachedComputeProgram;
-	cl_kernel cachedComputeKernel;
-	size_t cachedKernelWorkGroupSize;
-
-	char* computeKernelSource = readFromSourceFile(sourceFile);																									// Read source code from file.
-	if (!computeKernelSource) {
-		debuglogger::out << debuglogger::error << "couldn't read compute program source code from file" << debuglogger::endl;
-		return true;
-	}
-	cl_int err;
-	cachedComputeProgram = clCreateProgramWithSource(computeContext, 1, (const char**)&computeKernelSource, nullptr, &err);														// Create compute program with the source code.
-	delete[] computeKernelSource;																																			// Delete kernelSource because readFromSourceFile returned a raw, unsafe pointer that we need to take care of.
-	if (!cachedComputeProgram) {
-		debuglogger::out << debuglogger::error << "failed to create compute program with source code" << debuglogger::endl;
-		return true;
-	}
-
-	err = clBuildProgram(cachedComputeProgram, 0, nullptr, nullptr, nullptr, nullptr);																					// Build compute program.
-	if (err != CL_SUCCESS) {																																		// If build fails, alert user and display build log.
-		debuglogger::out << debuglogger::error << "failed to build compute program" << debuglogger::endl;
-		size_t buildLogSize;
-		err = clGetProgramBuildInfo(cachedComputeProgram, computeDevice, CL_PROGRAM_BUILD_LOG, 0, nullptr, &buildLogSize);												// Get size of build log.
-		if (err != CL_SUCCESS) {
-			debuglogger::out << debuglogger::error << "could not get compute program build log size" << debuglogger::endl;
-			return true;
-		}
-		char* buffer = new char[buildLogSize];
-		err = clGetProgramBuildInfo(cachedComputeProgram, computeDevice, CL_PROGRAM_BUILD_LOG, buildLogSize, buffer, nullptr);											// Get actual build log.
-		if (err != CL_SUCCESS) {
-			delete[] buffer;
-			debuglogger::out << debuglogger::error << "could not retrieve compute program build log" << debuglogger::endl;
-			return true;
-		}
-		debuglogger::out << "BUILD LOG:" << debuglogger::endl << buffer << debuglogger::endl;
-		delete[] buffer;
-		return true;
-	}
-
-	cachedComputeKernel = clCreateKernel(cachedComputeProgram, kernelName, &err);																							// Create compute kernel using a specific kernel function in the compute program.
-	if (!cachedComputeKernel) {
-		debuglogger::out << debuglogger::error << "failed to create compute kernel" << debuglogger::endl;
-		return true;
-	}
-
-	err = clGetKernelWorkGroupInfo(cachedComputeKernel, computeDevice, CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t), &cachedKernelWorkGroupSize, nullptr);						// Get kernel work group size.
-	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't get compute kernel work group size" << debuglogger::endl;
-		return true;
-	}
-
-	size_t computeKernelPreferredWorkGroupSizeMultiple;
-	err = clGetKernelWorkGroupInfo(cachedComputeKernel, computeDevice, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(size_t), &computeKernelPreferredWorkGroupSizeMultiple, nullptr);					// Get kernel preferred work group size multiple.
-	if (err != CL_SUCCESS) {
-		debuglogger::out << debuglogger::error << "couldn't get preferred kernel work group size multiple for compute kernel" << debuglogger::endl;
-		return true;
-	}
-
-	if (cachedKernelWorkGroupSize > computeKernelPreferredWorkGroupSizeMultiple) { cachedKernelWorkGroupSize -= cachedKernelWorkGroupSize % computeKernelPreferredWorkGroupSizeMultiple; }										// Compute the optimal work group size for the kernel based on the raw kernel optimum and the kernel preferred work group size multiple.
-
-	computeProgram = cachedComputeProgram;
-	computeKernel = cachedComputeKernel;
-	computeKernelWorkGroupSize = cachedKernelWorkGroupSize;
-
-	return false;
-}
 
 // Sets up some of the OpenCL vars asynchronously while the main thread handles other things.
 bool OpenCLSetupFailure;
@@ -154,14 +70,27 @@ void OpenCLSetup() {
 		return;
 	}
 
-	if (setupComputeKernel("wavePropagator.cl", "wavePropagator", computeWaveProgram, computeWaveKernel, computeWaveKernelWorkGroupSize)) {
+	char* buildLog;
+	err = setupComputeKernel(computeContext, computeDevice, "wavePropagator.cl", "wavePropagator", computeWaveProgram, computeWaveKernel, computeWaveKernelWorkGroupSize, buildLog);
+	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "failed to set up wave propagator kernel" << debuglogger::endl;
+		if (err == CL_EXT_BUILD_FAILED_WITH_BUILD_LOG) {
+			debuglogger::out << debuglogger::error << "failed build" << debuglogger::endl;
+			debuglogger::out << "BUILD LOG:" << debuglogger::endl << buildLog << debuglogger::endl;
+			delete[] buildLog;
+		}
 		OpenCLSetupFailure = true;
 		return;
 	}
 
-	if (setupComputeKernel("colorizer.cl", "colorizer", computeColorizerProgram, computeColorizerKernel, computeColorizerKernelWorkGroupSize)) {
+	err = setupComputeKernel(computeContext, computeDevice, "colorizer.cl", "colorizer", computeColorizerProgram, computeColorizerKernel, computeColorizerKernelWorkGroupSize, buildLog);
+	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "failed to set up colorizer kernel" << debuglogger::endl;
+		if (err == CL_EXT_BUILD_FAILED_WITH_BUILD_LOG) {
+			debuglogger::out << debuglogger::error << "failed build" << debuglogger::endl;
+			debuglogger::out << "BUILD LOG:" << debuglogger::endl << buildLog << debuglogger::endl;
+			delete[] buildLog;
+		}
 		OpenCLSetupFailure = true;
 		return;
 	}
@@ -204,24 +133,27 @@ bool setDefaultKernelImageArguments() {
 cl_uint windowWidth;
 cl_uint windowHeight;
 
+cl_uint fieldWidth;
+cl_uint fieldHeight;
+
 // Global const which defines the image format that is to be used for compute images.
 const cl_image_format computeImageFormat = { CL_R, CL_FLOAT };
-const cl_image_format computeFrameFormat = { CL_RGBA, CL_UNSIGNED_INT8 };
+const cl_image_format computeFrameFormat = { CL_RGBA, CL_UNSIGNED_INT8 };										// TODO: See about making this CL_RGB or something. Would that be simpler on the processor in some way? Could you support that on the CPU?
 
 bool createComputeImages() {
-	size_t windowArea = windowWidth * windowHeight;																																					// Create an array of floats and zero them out. This memory will be copied to compute device so compute buffers are zeroed out.
-	float* startValues = new float[windowArea];
-	ZeroMemory(startValues, windowArea * sizeof(float));
+	size_t fieldArea = fieldWidth * fieldHeight;																																					// Create an array of floats and zero them out. This memory will be copied to compute device so compute buffers are zeroed out.
+	float* startValues = new float[fieldArea];
+	ZeroMemory(startValues, fieldArea * sizeof(float));
 
 	cl_int err;
 
-	lastFieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, &computeImageFormat, windowWidth, windowHeight,
+	lastFieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, &computeImageFormat, fieldWidth, fieldHeight,
 		0, startValues, &err);
 	if (!lastFieldValues_computeImage) {
 		debuglogger::out << debuglogger::error << "failed to create lastFieldValues compute image" << debuglogger::endl;
 		return true;
 	}
-	lastFieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, &computeImageFormat, windowWidth, windowHeight,
+	lastFieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, &computeImageFormat, fieldWidth, fieldHeight,
 		0, startValues, &err);
 	if (!lastFieldVels_computeImage) {
 		debuglogger::out << debuglogger::error << "failed to create lastFieldVels compute image" << debuglogger::endl;
@@ -230,13 +162,13 @@ bool createComputeImages() {
 
 	delete[] startValues;
 
-	fieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE, &computeImageFormat, windowWidth, windowHeight,
+	fieldValues_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE, &computeImageFormat, fieldWidth, fieldHeight,
 		0, nullptr, &err);
 	if (!fieldValues_computeImage) {
 		debuglogger::out << debuglogger::error << "failed to create fieldValues compute image" << debuglogger::endl;
 		return true;
 	}
-	fieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE, &computeImageFormat, windowWidth, windowHeight,
+	fieldVels_computeImage = clCreateImage2D(computeContext, CL_MEM_READ_WRITE, &computeImageFormat, fieldWidth, fieldHeight,
 		0, nullptr, &err);
 	if (!fieldVels_computeImage) {
 		debuglogger::out << debuglogger::error << "failed to create fieldVels compute image" << debuglogger::endl;
@@ -264,10 +196,10 @@ bool createComputeImages() {
 	return false;
 }
 
-bool setKernelWindowSizeArguments() {
-	cl_int err = clSetKernelArg(computeWaveKernel, 4, sizeof(cl_uint), &windowWidth);
+bool setKernelSizeArguments() {
+	cl_int err = clSetKernelArg(computeWaveKernel, 4, sizeof(cl_uint), &fieldWidth);
 	if (err != CL_SUCCESS) { return true; }
-	err = clSetKernelArg(computeWaveKernel, 5, sizeof(cl_uint), &windowHeight);
+	err = clSetKernelArg(computeWaveKernel, 5, sizeof(cl_uint), &fieldHeight);
 	if (err != CL_SUCCESS) { return true; }
 
 	err = clSetKernelArg(computeColorizerKernel, 2, sizeof(cl_uint), &windowWidth);
@@ -344,6 +276,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	}
 	windowWidth = clientRect.right;																																		// Don't worry about subtracting left and top here, per documentation, they are always 0 and right and bottom are always width and height.
 	windowHeight = clientRect.bottom;
+	fieldWidth = windowWidth * 2;
+	fieldHeight = windowHeight * 2;
 
 	debuglogger::out << "creating compute images..." << debuglogger::endl;
 	if (createComputeImages()) {
@@ -352,7 +286,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	}
 
 	debuglogger::out << "setting the windowWidth and windowHeight compute kernel arguments..." << debuglogger::endl;
-	if (setKernelWindowSizeArguments()) {
+	if (setKernelSizeArguments()) {
 		debuglogger::out << debuglogger::error << "failed to set window size arguments in kernel, terminating..." << debuglogger::endl;
 		return EXIT_FAILURE;
 	}
@@ -372,20 +306,20 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 	graphicsThread.join();
 }
 
-const size_t region[3] = { 1, 1, 1 };
-const float mouseGenerationValue = 10000;
+const size_t region[3] = { 2, 2, 1 };
+#define WAVE_GENERATION_VALUE 10000
+const float waveGenerationField[] = { WAVE_GENERATION_VALUE, WAVE_GENERATION_VALUE, WAVE_GENERATION_VALUE, WAVE_GENERATION_VALUE };
 bool handleMouseClick() {
+	size_t origin[3] = { mouseX * 2, mouseY * 2, 0 };
 	if (swapState) {
-		size_t origin[3] = { mouseX, mouseY, 0 };
-		cl_int err = clEnqueueWriteImage(computeCommandQueue, fieldValues_computeImage, true, origin, region, 0, 0, &mouseGenerationValue, 0, nullptr, nullptr);
+		cl_int err = clEnqueueWriteImage(computeCommandQueue, fieldValues_computeImage, true, origin, region, 0, 0, waveGenerationField, 0, nullptr, nullptr);
 		if (err != CL_SUCCESS) {
 			debuglogger::out << debuglogger::error << "couldn't write mouse update to compute device memory" << debuglogger::endl;
 			return true;
 		}
 		return false;
 	}
-	size_t origin[3] = { mouseX, mouseY, 0};
-	cl_int err = clEnqueueWriteImage(computeCommandQueue, lastFieldValues_computeImage, true, origin, region, 0, 0, &mouseGenerationValue, 0, nullptr, nullptr);
+	cl_int err = clEnqueueWriteImage(computeCommandQueue, lastFieldValues_computeImage, true, origin, region, 0, 0, waveGenerationField, 0, nullptr, nullptr);
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "couldn't write mouse update to compute device memory" << debuglogger::endl;
 		return true;
@@ -452,7 +386,7 @@ void graphicsLoop(HWND hWnd) {
 			mouseClicked = false;
 		}
 
-		size_t globalSize[2] = { windowWidth + (computeWaveKernelWorkGroupSize - (windowWidth % computeWaveKernelWorkGroupSize)), windowHeight };// TODO: In order to add antialiasing, you need multiply the actual fields by 4 and have the frameoutput match the window size.
+		size_t globalSize[2] = { fieldWidth + (computeWaveKernelWorkGroupSize - (fieldWidth % computeWaveKernelWorkGroupSize)), fieldHeight };// TODO: In order to add antialiasing, you need multiply the actual fields by 4 and have the frameoutput match the window size.
 																																				// TODO: How are you going to generate waves if every pixel is actually 4? 4 pixels at a time? will that cause interference?
 		size_t localSize[2] = { computeWaveKernelWorkGroupSize, 1 };
 		err = clEnqueueNDRangeKernel(computeCommandQueue, computeWaveKernel, 2, nullptr, globalSize, localSize, 0, nullptr, nullptr);
@@ -461,7 +395,9 @@ void graphicsLoop(HWND hWnd) {
 			// TODO: Implement some way of exiting from inside the graphics thread loop.
 		}
 
-		err = clEnqueueNDRangeKernel(computeCommandQueue, computeColorizerKernel, 2, nullptr, globalSize, localSize, 0, nullptr, nullptr);
+		size_t globalSize2[2] = { windowWidth + (computeColorizerKernelWorkGroupSize - (windowWidth % computeColorizerKernelWorkGroupSize)), windowHeight };
+		size_t localSize2[2] = { computeColorizerKernelWorkGroupSize, 1 };
+		err = clEnqueueNDRangeKernel(computeCommandQueue, computeColorizerKernel, 2, nullptr, globalSize2, localSize2, 0, nullptr, nullptr);
 		if (err != CL_SUCCESS) {
 			debuglogger::out << debuglogger::error << "failed to enqueue colorizer kernel" << debuglogger::endl;
 		}
@@ -478,7 +414,7 @@ void graphicsLoop(HWND hWnd) {
 
 		size_t origin[3] = { 0, 0, 0 };
 		size_t region[3] = { windowWidth, windowHeight, 1 };
-		err = clEnqueueReadImage(computeCommandQueue, frameOutput_computeImage, true, (const size_t*)&origin, (const size_t*)&region, 0, 0, frame, 0, nullptr, nullptr);
+		err = clEnqueueReadImage(computeCommandQueue, frameOutput_computeImage, true, origin, region, 0, 0, frame, 0, nullptr, nullptr);
 		if (err != CL_SUCCESS) {
 			debuglogger::out << debuglogger::error << "couldn't read frame output from compute device" << debuglogger::endl;
 		}
