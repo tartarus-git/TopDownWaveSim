@@ -34,6 +34,7 @@ __kernel void colorizer(__read_only image2d_t fieldValues, __write_only image2d_
 		antialiased /= -100;
 		ZERO(antialiased);
 		write_imagef(frameOutput, coords, (float4)(0, 0, antialiased, 1));
+		// TODO: Try using write_imageui for the frame since write_imagef technically shouldn't work.
 		return;
 	}
 	if (antialiased > FLOAT_ZERO_WINDOW) {
