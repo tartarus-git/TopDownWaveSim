@@ -1,5 +1,5 @@
-#define NODE_EQUALIZATION_STRENGTH 0.1f						// Strength with which nodes are pulled toward each other.
-#define FIELD_PULL 0.01f									// Strength at which nodes are pulled back to the field zero level.
+#define NODE_EQUALIZATION_STRENGTH 0.15f						// Strength with which nodes are pulled toward each other.
+#define FIELD_PULL 0.1f									// Strength at which nodes are pulled back to the field zero level.
 
 #define SQRT_2 1.41421356237f								// These defines optimize the kernel by storing precalculated square roots.
 #define SQRT_5 2.2360679775f								// These are used while handling the influence area.
