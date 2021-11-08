@@ -18,10 +18,6 @@ SQRT_5, SQRT_5, SQRT_5, SQRT_8, SQRT_8, SQRT_8, SQRT_8, 3, SQRT_10, SQRT_10, 3, 
 
 #define INFLUENCE_AREA_COUNT (sizeof(influenceAreaX) / sizeof(int))
 
-// Float error correction helpers.
-#define FLOAT_ZERO_WINDOW 0.00001f							// Purpose: Checking floats against 0. Reason: Rounding errors.
-#define ROUND_ZERO(x) if (x >= -FLOAT_ZERO_WINDOW && x <= FLOAT_ZERO_WINDOW) { x = 0; }		// Clamps almost 0 values to 0.
-
 // Equalization function contains math for the equalization (nodes pulling each other together) of nodes.
 float equalize(float thisValue, float otherValue, float dist) {
 	return (thisValue - otherValue) * NODE_EQUALIZATION_STRENGTH / dist;
@@ -38,12 +34,10 @@ __kernel void wavePropagator(__read_only image2d_t lastFieldValues, __read_only 
 
 	float prevValue = read_imagef(lastFieldValues, coords).x;				// Get the previous value and velocity at current position.
 	float prevVel = read_imagef(lastFieldVels, coords).x;
-	ROUND_ZERO(prevValue);
-	ROUND_ZERO(prevVel);
 
 	float vel;																// Calculate new velocity by using FIELD_PULL.
-	if (prevValue > FLOAT_ZERO_WINDOW) { vel = prevVel - FIELD_PULL; }		// Use FLOAT_ZERO_WINDOW to do comparison against 0.
-	else if (prevValue < -FLOAT_ZERO_WINDOW) { vel = prevVel + FIELD_PULL; }
+	if (prevValue > 0) { vel = prevVel - FIELD_PULL; }		// Use FLOAT_ZERO_WINDOW to do comparison against 0.
+	else if (prevValue < 0) { vel = prevVel + FIELD_PULL; }
 	else { vel = prevVel; }
 
 		for (int i = 0; i < INFLUENCE_AREA_COUNT; i++) {						// Calculate equalization for all nodes in influence area.
@@ -57,18 +51,13 @@ __kernel void wavePropagator(__read_only image2d_t lastFieldValues, __read_only 
 			// Pull this node towards equalization. Pass in values of the two nodes and distance between them.
 			float thing = read_imagef(lastFieldValues, (int2)(absoluteX, absoluteY)).x;
 			float thing2 = equalize(prevValue, thing, influenceAreaDists[i]);
-			ROUND_ZERO(thing2);
 			vel -= thing2;
-			ROUND_ZERO(vel);
 		}
-
-		ROUND_ZERO(vel);
 
 		// (float4)(x, 0, 0, 0) would construct a temporary each time. Instead we make our own temporary and use it twice, better in theory.
 		float4 colorHull = (float4)(vel, 0, 0, 0);								// Velocity was already calculated so just put it in here.
 		write_imagef(fieldVels, coords, colorHull);
 
 		colorHull.x += prevValue;												// Add prevValue to vel, thereby calculating new value.
-		ROUND_ZERO(colorHull.x);
 		write_imagef(fieldValues, coords, colorHull);
 }

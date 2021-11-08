@@ -63,7 +63,7 @@ void OpenCLSetup() {
 		return;
 	}
 
-	cl_int err = initOpenCLVarsForBestDevice("OpenCL 2.1 ", computePlatform, computeDevice, computeContext, computeCommandQueue);								// Initialize some necessary OpenCL vars. The space at the end of the version string is necessary.
+	cl_int err = initOpenCLVarsForBestDevice("OpenCL 3.0 ", computePlatform, computeDevice, computeContext, computeCommandQueue);								// Initialize some necessary OpenCL vars. The space at the end of the version string is necessary.
 	if (err != CL_SUCCESS) {
 		debuglogger::out << debuglogger::error << "failed while initializing OpenCL vars for best device" << debuglogger::endl;
 		OpenCLSetupFailure = true;
@@ -307,7 +307,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 }
 
 const size_t region[3] = { 2, 2, 1 };
-#define WAVE_GENERATION_VALUE 100
+#define WAVE_GENERATION_VALUE 1000
 const float waveGenerationField[] = { WAVE_GENERATION_VALUE, WAVE_GENERATION_VALUE, WAVE_GENERATION_VALUE, WAVE_GENERATION_VALUE };
 bool handleMouseClick() {
 	size_t origin[3] = { mouseX * 2, mouseY * 2, 0 };
