@@ -307,7 +307,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, char* lpCmdLine
 }
 
 const size_t region[3] = { 2, 2, 1 };
-#define WAVE_GENERATION_VALUE 1000
+#define WAVE_GENERATION_VALUE 100
 const float waveGenerationField[] = { WAVE_GENERATION_VALUE, WAVE_GENERATION_VALUE, WAVE_GENERATION_VALUE, WAVE_GENERATION_VALUE };
 bool handleMouseClick() {
 	size_t origin[3] = { mouseX * 2, mouseY * 2, 0 };
